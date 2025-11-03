@@ -1,8 +1,8 @@
-# 🏠 PlaybookTV Interior Design AI Pipeline
+#  PlaybookTV Interior Design AI Pipeline
 
 **Advanced AI system for interior design analysis, object detection, and room/style classification.**
 
-## 📋 Project Overview
+##  Project Overview
 
 This project implements a complete end-to-end pipeline for analyzing interior design images, featuring:
 
@@ -12,7 +12,7 @@ This project implements a complete end-to-end pipeline for analyzing interior de
 - **Room & Style Classification**: Deep learning models for room type (6 classes) and design style (9 classes)
 - **Metadata Management**: DuckDB-based system for efficient metadata storage and querying
 
-## 🎯 Key Features
+##  Key Features
 
 ### 1. Data Collection System
 - ✅ **15,000+ images** collected from multiple sources
@@ -38,7 +38,7 @@ This project implements a complete end-to-end pipeline for analyzing interior de
 - ✅ ResNet18-based architecture with multi-task learning
 - ✅ Early stopping and gradient clipping for stability
 
-## 📊 Performance Metrics
+## Model Performance Metrics
 
 | Metric | Training | Validation |
 |--------|----------|------------|
@@ -47,7 +47,7 @@ This project implements a complete end-to-end pipeline for analyzing interior de
 | **Object Detection** | 100% SAM2 masks | 25,497 detections |
 | **Dataset Size** | 4,209 images | 1,053 images |
 
-## 🏗️ Project Structure
+##  Project Structure
 ```
 playbooktv-interior-design-ai/
 │
@@ -82,7 +82,7 @@ playbooktv-interior-design-ai/
 └── README.md                 # This file
 ```
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### Prerequisites
 - Python 3.8+
@@ -209,7 +209,7 @@ CREATE TABLE furniture_detections (
 );
 ```
 
-## 🎨 Interior Taxonomy
+##  Interior Taxonomy
 
 The taxonomy includes **294 specific furniture types** organized as:
 
@@ -244,7 +244,7 @@ The taxonomy includes **294 specific furniture types** organized as:
 - mid_century_modern
 - rustic
 
-## 🧪 Testing
+##  Testing
 ```bash
 # Run all tests
 pytest tests/
@@ -253,7 +253,7 @@ pytest tests/
 pytest tests/test_data_collection.py
 ```
 
-## 📈 Performance Optimization
+##  Performance Optimization
 
 ### Data Collection
 - Parallel downloads from multiple sources
@@ -270,7 +270,7 @@ pytest tests/test_data_collection.py
 - Gradient clipping for stability
 - Early stopping to prevent overfitting
 
-## 🤝 Contributing
+##  Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
@@ -278,17 +278,15 @@ pytest tests/test_data_collection.py
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-## 📝 License
+## License
 
 This project is proprietary to PlaybookTV. All rights reserved.
 
 ## 👥 Team
 
-- **Data Science Lead**: [Your Name]
-- **Organization**: PlaybookTV
-- **Contact**: [Your Email]
+- **Data Science Lead**: [Pearl Isa]
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 - **YOLOv8** by Ultralytics
 - **SAM2** by Meta AI Research
@@ -296,39 +294,29 @@ This project is proprietary to PlaybookTV. All rights reserved.
 - **HuggingFace** for dataset infrastructure
 - **DuckDB** for efficient data management
 
-## 📊 Roadmap
+## Roadmap
 
-### ✅ Completed (Phase 1)
+### Completed (Phase 1)
 - [x] Multi-source data collection
 - [x] Comprehensive taxonomy creation
 - [x] YOLO + SAM2 integration
 - [x] Room & style classification
 - [x] DuckDB metadata system
 
-### 🔄 In Progress (Phase 2)
+###  In Progress (Phase 2)
 - [ ] Fine-tune YOLO on custom taxonomy
 - [ ] Web API deployment
 - [ ] Real-time inference pipeline
 - [ ] User feedback system
 
-### 📅 Planned (Phase 3)
+### Planned (Phase 3)
 - [ ] Mobile app integration
 - [ ] 3D room reconstruction
 - [ ] Style recommendation engine
 - [ ] Augmented reality features
 
-## 🐛 Known Issues
+## Known Issues
 
 1. **YOLO detections are generic**: Currently uses COCO classes (chair, bed) instead of specific taxonomy (wingback_chair, platform_bed). Resolution planned in Phase 2.
 
 2. **Style classification accuracy**: 53.8% accuracy is decent but can be improved with more training data.
-
-## 📧 Support
-
-For questions or issues:
-- Email: [your-email@playbooktv.com]
-- GitHub Issues: [Create an issue](https://github.com/thePlaybookTV/playbooktv-interior-design-ai/issues)
-
----
-
-**Built with ❤️ by the PlaybookTV Data Science Team**

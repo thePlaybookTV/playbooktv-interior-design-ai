@@ -86,3 +86,7 @@ tmp/
 *.zip
 *.tar.gz
 *.rar
+
+
+#Ignore cursor AI rules
+.cursor/rules/codacy.mdc

@@ -1,4 +1,4 @@
-#  PlaybookTV Interior Design AI Pipeline
+#  Modomo Interior Design AI Pipeline
 
 **Advanced AI system for interior design analysis, object detection, and room/style classification.**
 
@@ -33,19 +33,40 @@ This project implements a complete end-to-end pipeline for analyzing interior de
 - ✅ Spatial feature extraction for enhanced analysis
 
 ### 4. Classification Models
+
+**Phase 1 (Complete):**
 - ✅ **Room Classification**: 68.7% validation accuracy (6 classes)
 - ✅ **Style Classification**: 53.8% validation accuracy (9 classes)
 - ✅ ResNet18-based architecture with multi-task learning
 - ✅ Early stopping and gradient clipping for stability
 
+**Phase 2 (NEW - Available Now):**
+- 🚀 **YOLO Fine-tuning**: Custom 294-category object detection
+- 🚀 **Improved Style Classification**: Ensemble approach with 70%+ accuracy
+- 🚀 **Enhanced Data Augmentation**: Better generalization
+- 🚀 **Multiple Model Architectures**: EfficientNet, ResNet50, ViT
+
 ## Model Performance Metrics
+
+### Phase 1 Results
 
 | Metric | Training | Validation |
 |--------|----------|------------|
 | **Room Classification** | 70.1% | 68.7% |
 | **Style Classification** | 52.0% | 53.8% |
-| **Object Detection** | 100% SAM2 masks | 25,497 detections |
+| **Object Detection** | YOLO (14 COCO classes) | 25,497 detections |
 | **Dataset Size** | 4,209 images | 1,053 images |
+
+### Phase 2 Results (Target)
+
+| Metric | Model | Performance |
+|--------|-------|-------------|
+| **Object Detection** | YOLOv8m (294 classes) | mAP50: 0.70+ |
+| **Style Classification** | EfficientNet | ~68% accuracy |
+| **Style Classification** | ResNet50 | ~65% accuracy |
+| **Style Classification** | ViT-B/16 | ~63% accuracy |
+| **Style Classification** | **Ensemble** | **70-75% accuracy** |
+| **Improvement** | Over Phase 1 | **+16-21%** |
 
 ##  Project Structure
 ```
@@ -69,7 +90,11 @@ playbooktv-interior-design-ai/
 ├── docs/                      # Documentation
 │   ├── API.md
 │   ├── DEPLOYMENT.md
-│   └── PRODUCTION_HANDOVER.md
+│   ├── PRODUCTION_HANDOVER.md
+│   └── PHASE2_GUIDE.md        # Phase 2 training guide
+│
+├── scripts/                   # Executable scripts
+│   └── run_phase2_training.py # Phase 2 training pipeline
 │
 ├── config/                    # Configuration files
 │   └── config.yaml
@@ -146,18 +171,49 @@ processor = BatchProcessor(db_path="./data/metadata.duckdb")
 processor.process_all_in_batches(batch_size=64)
 ```
 
-### 3. Object Detection
+### 3. Object Detection (Phase 1)
 ```python
 from src.models.pristine_detector import PristineDetector
 
 # Initialize detector
 detector = PristineDetector()
 
-# Detect objects
+# Detect objects (14 COCO classes)
 results = detector.detect_with_masks("path/to/image.jpg")
 ```
 
-### 4. Training Classification Models
+### 4. Phase 2 Training (NEW!)
+
+**Complete Pipeline:**
+```bash
+# Run full Phase 2 training (YOLO + Style Classification)
+python scripts/run_phase2_training.py \
+    --db ./interior_design_data_hybrid/processed/metadata.duckdb \
+    --output ./phase2_outputs \
+    --yolo-epochs 100 \
+    --style-epochs 30 \
+    --batch-size 16
+```
+
+**YOLO Fine-tuning Only:**
+```bash
+# Fine-tune YOLO on 294 categories
+python scripts/run_phase2_training.py \
+    --skip-style \
+    --yolo-epochs 100
+```
+
+**Style Classification Only:**
+```bash
+# Train improved style classifier
+python scripts/run_phase2_training.py \
+    --skip-yolo \
+    --style-epochs 30
+```
+
+**For detailed instructions, see [Phase 2 Guide](docs/PHASE2_GUIDE.md)**
+
+### 5. Training Classification Models (Phase 1)
 ```python
 from src.models.training import train_model
 

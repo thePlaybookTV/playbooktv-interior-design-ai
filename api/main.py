@@ -17,6 +17,10 @@ from pathlib import Path
 import os
 from datetime import datetime
 
+# Setup logging FIRST (before anything else)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Fix Python path to find src module
 import sys
 project_root = Path(__file__).parent.parent
@@ -26,16 +30,13 @@ sys.path.insert(0, str(project_root))
 try:
     from src.models.improved_style_classifier import EfficientNetStyleClassifier, EnsembleStyleClassifier
     from ultralytics import YOLO
+    logger.info("✅ Model imports successful")
 except ImportError as e:
-    logger.warning(f"Could not import models: {e}")
+    logger.warning(f"⚠️ Could not import models: {e}")
     logger.warning("Models will be loaded dynamically when available")
     EfficientNetStyleClassifier = None
     EnsembleStyleClassifier = None
     YOLO = None
-
-# Setup logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # Initialize FastAPI
 app = FastAPI(

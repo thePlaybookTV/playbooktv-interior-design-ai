@@ -101,8 +101,12 @@ class R2ToPhase2Pipeline:
         print("  - Store detections in DuckDB")
         print("="*80)
 
-        # Initialize batch processor
-        processor = BatchProcessor(db_path=self.db_path)
+        # Create custom config with our output directory
+        from src.processing.image_processor import DataConfig
+        config = DataConfig(base_dir=str(self.output_dir / "processed"))
+
+        # Initialize batch processor with custom config
+        processor = BatchProcessor(db_path=self.db_path, config=config)
 
         # Process all images in R2 directory
         count = processor.process_directory(

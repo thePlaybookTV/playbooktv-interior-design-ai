@@ -38,13 +38,13 @@ except ImportError:
 
 class DataConfig:
     """Configuration for data processing"""
-    def __init__(self):
-        self.base_dir = Path("./interior_design_data_hybrid")
+    def __init__(self, base_dir: str = "./interior_design_data_hybrid"):
+        self.base_dir = Path(base_dir)
         self.processed_images_dir = self.base_dir / "processed_images"
-        self.processed_images_dir.mkdir(exist_ok=True)
-        
+        self.processed_images_dir.mkdir(exist_ok=True, parents=True)
+
         self.embeddings_dir = self.base_dir / "embeddings"
-        self.embeddings_dir.mkdir(exist_ok=True)
+        self.embeddings_dir.mkdir(exist_ok=True, parents=True)
         
         self.target_size = (512, 512)  # Standard size for all images
         self.quality = 85  # JPEG quality

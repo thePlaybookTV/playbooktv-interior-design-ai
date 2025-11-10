@@ -42,23 +42,53 @@ class YOLODatasetBuilder:
 
     def _create_coco_mapping(self) -> Dict[str, str]:
         """Map COCO classes to taxonomy categories"""
-        # Map generic COCO classes to more specific taxonomy items
-        # This is a starter mapping - you can expand it
+        # Comprehensive mapping from COCO classes to taxonomy
         mapping = {
+            # Furniture - Seating
             'couch': 'sectional_sofa',
             'chair': 'accent_chair',
+            'bench': 'bench',
+
+            # Furniture - Beds
             'bed': 'queen_bed',
+
+            # Furniture - Tables
             'dining table': 'dining_table',
-            'toilet': 'toilet',
+            'desk': 'desk',
+
+            # Electronics
             'tv': 'flat_screen_tv',
             'laptop': 'laptop',
-            'sink': 'sink',
+            'keyboard': 'keyboard',
+            'mouse': 'computer_mouse',
+            'remote': 'remote_control',
+            'cell phone': 'cell_phone',
+
+            # Kitchen & Appliances
             'refrigerator': 'refrigerator',
             'oven': 'oven',
+            'microwave': 'microwave',
+            'toaster': 'toaster',
+            'sink': 'sink',
+            'dishwasher': 'dishwasher',
+
+            # Bathroom
+            'toilet': 'toilet',
+            'bathtub': 'bathtub',
+            'shower': 'walk_in_shower',
+
+            # Decor & Accessories
             'potted plant': 'potted_plant',
             'vase': 'decorative_vase',
             'clock': 'wall_clock',
             'book': 'decorative_books',
+            'bottle': 'decorative_bottles',
+            'cup': 'coffee_mug',
+            'bowl': 'decorative_bowl',
+            'scissors': 'scissors',
+
+            # Lighting (mapped to generic categories)
+            'lamp': 'table_lamp',
         }
         return mapping
 
@@ -134,12 +164,20 @@ class YOLODatasetBuilder:
     def _process_split(self, df: pd.DataFrame, img_dir: Path, label_dir: Path, split: str):
         """Process images and labels for a split"""
 
+        # Track statistics
+        skipped_no_file = 0
+        skipped_no_detections = 0
+        skipped_no_valid_annotations = 0
+        skipped_unmapped_classes = set()
+        copied_images = 0
+
         for idx, row in tqdm(df.iterrows(), total=len(df), desc=f"Processing {split}"):
             image_id = row['image_id']
             original_path = row['original_path']
 
             # Check if image exists
             if not os.path.exists(original_path):
+                skipped_no_file += 1
                 continue
 
             # Get detections for this image
@@ -153,6 +191,7 @@ class YOLODatasetBuilder:
             """, [image_id]).df()
 
             if len(detections) == 0:
+                skipped_no_detections += 1
                 continue
 
             # Load image to get dimensions
@@ -160,6 +199,7 @@ class YOLODatasetBuilder:
                 img = Image.open(original_path)
                 img_width, img_height = img.size
             except:
+                skipped_no_file += 1
                 continue
 
             # Convert detections to YOLO format
@@ -190,12 +230,20 @@ class YOLODatasetBuilder:
                         height = max(0, min(1, height))
 
                         yolo_annotations.append(f"{class_id} {center_x:.6f} {center_y:.6f} {width:.6f} {height:.6f}")
+                else:
+                    # Track unmapped classes
+                    skipped_unmapped_classes.add(coco_class)
 
             # Only save if we have annotations
             if yolo_annotations:
                 # Copy image
                 img_filename = f"{image_id}.jpg"
-                shutil.copy(original_path, img_dir / img_filename)
+                try:
+                    shutil.copy(original_path, img_dir / img_filename)
+                    copied_images += 1
+                except Exception as e:
+                    print(f"\n⚠️  Failed to copy {original_path}: {e}")
+                    continue
 
                 # Save label file
                 label_filename = f"{image_id}.txt"
@@ -203,6 +251,17 @@ class YOLODatasetBuilder:
 
                 with open(label_path, 'w') as f:
                     f.write('\n'.join(yolo_annotations))
+            else:
+                skipped_no_valid_annotations += 1
+
+        # Print statistics
+        print(f"\n📊 {split.capitalize()} Split Statistics:")
+        print(f"   ✅ Images copied: {copied_images}")
+        print(f"   ⚠️  Skipped (no file): {skipped_no_file}")
+        print(f"   ⚠️  Skipped (no detections): {skipped_no_detections}")
+        print(f"   ⚠️  Skipped (no valid annotations): {skipped_no_valid_annotations}")
+        if skipped_unmapped_classes:
+            print(f"   ⚠️  Unmapped COCO classes: {sorted(skipped_unmapped_classes)}")
 
     def _create_yaml(self):
         """Create YOLO data.yaml configuration file"""

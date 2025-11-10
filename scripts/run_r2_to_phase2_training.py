@@ -23,7 +23,6 @@ from src.data_collection.cloudflare_r2_downloader import CloudflareR2Downloader
 from src.processing.batch_processor import BatchProcessor
 from src.models.yolo_dataset_prep import YOLODatasetBuilder
 from src.models.yolo_finetune import YOLOFineTuner
-from src.models.improved_style_classifier import ImprovedStyleClassifier
 
 
 class R2ToPhase2Pipeline:
@@ -171,19 +170,21 @@ class R2ToPhase2Pipeline:
 
         return train_results, val_results
 
-    def step5_train_style_classifiers(self, epochs: int = 30):
+    def step5_train_style_classifiers(self, epochs: int = 30, batch_size: int = 32):
         """Step 5: Train improved style classifiers"""
         print("\n" + "="*80)
         print("🎨 STEP 5: TRAINING IMPROVED STYLE CLASSIFIERS")
         print("="*80)
 
-        classifier = ImprovedStyleClassifier(
-            db_path=self.db_path,
-            output_dir=str(self.output_dir)
-        )
+        # Import the training function
+        from src.models.improved_style_classifier import train_improved_style_classifier
 
-        # This will train EfficientNet, ResNet50, and ViT
-        results = classifier.train_all_models(epochs=epochs)
+        # Train all models
+        results = train_improved_style_classifier(
+            db_path=self.db_path,
+            epochs=epochs,
+            batch_size=batch_size
+        )
 
         print(f"\n✅ Style classifier training complete!")
 

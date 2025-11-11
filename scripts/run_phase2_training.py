@@ -75,9 +75,20 @@ class Phase2Pipeline:
         print("🎯 STEP 2: FINE-TUNING YOLO ON 294 CATEGORIES")
         print("=" * 80)
 
+        # Use YOLO model from Gradient datasets or environment variable
+        yolo_model_path = os.getenv('YOLO_MODEL_PATH', '/datasets/yolo/yolov8m.pt')
+
+        # Check if model exists, fallback to local if not
+        if not Path(yolo_model_path).exists():
+            print(f"⚠️  YOLO model not found at {yolo_model_path}")
+            print(f"   Will download yolov8m.pt (this may take a while)")
+            yolo_model_path = 'yolov8m.pt'
+        else:
+            print(f"✅ Using YOLO model from: {yolo_model_path}")
+
         finetuner = YOLOFineTuner(
             data_yaml=str(data_yaml),
-            model_size='yolov8m.pt'
+            model_size=yolo_model_path
         )
 
         # Train

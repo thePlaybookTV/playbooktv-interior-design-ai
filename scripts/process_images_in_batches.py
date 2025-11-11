@@ -15,7 +15,7 @@ from tqdm import tqdm
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.processing.batch_processor import BatchProcessor
+from src.processing.batch_processor_with_sam2 import BatchProcessorWithSAM2
 from src.processing.image_processor import DataConfig
 
 
@@ -58,8 +58,8 @@ def process_in_batches(
     # Create config
     config = DataConfig(base_dir=output_dir)
 
-    # Initialize processor
-    processor = BatchProcessor(db_path=db_path, config=config)
+    # Initialize processor with YOLO+SAM2 detection
+    processor = BatchProcessorWithSAM2(db_path=db_path, config=config, use_detector=True)
 
     # Process in batches
     total_processed = 0

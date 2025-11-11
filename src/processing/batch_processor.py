@@ -10,20 +10,45 @@ from typing import List, Optional
 from datetime import datetime
 from tqdm.auto import tqdm
 import duckdb
+import sys
 
 from .image_processor import ImageProcessor, DataConfig, ImageMetadata
+
+# Import pristine detector for object detection
+try:
+    from ..models.pristine_detector import PristineDetector
+except ImportError:
+    # Fallback if import fails
+    project_root = Path(__file__).parent.parent.parent
+    sys.path.insert(0, str(project_root))
+    from src.models.pristine_detector import PristineDetector
 
 
 class BatchProcessor:
     """Processes images in batches and stores metadata in DuckDB"""
-    
-    def __init__(self, db_path: str = "./data/metadata.duckdb", config: Optional[DataConfig] = None):
+
+    def __init__(self, db_path: str = "./data/metadata.duckdb", config: Optional[DataConfig] = None, enable_detection: bool = True):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(exist_ok=True, parents=True)
         self.config = config or DataConfig()
         self.processor = ImageProcessor(self.config)
         self.conn = duckdb.connect(str(self.db_path))
         self._create_tables()
+
+        # Initialize detector if enabled
+        self.enable_detection = enable_detection
+        if self.enable_detection:
+            print("🎯 Initializing YOLO+SAM2 detector for furniture detection...")
+            try:
+                self.detector = PristineDetector()
+                print("✅ Detector ready!")
+            except Exception as e:
+                print(f"⚠️  Detector failed to initialize: {e}")
+                print("   Continuing without object detection...")
+                self.enable_detection = False
+                self.detector = None
+        else:
+            self.detector = None
     
     def _create_tables(self):
         """Create database tables if they don't exist"""
@@ -95,14 +120,43 @@ class BatchProcessor:
             
             # Process image
             metadata = self.processor.process_image(str(image_path), metadata)
-            
+
+            # Run object detection if enabled
+            furniture_count = 0
+            if self.enable_detection and self.detector:
+                try:
+                    detection_result = self.detector.detect_with_masks(str(image_path))
+                    items = detection_result.get('items', [])
+                    furniture_count = len(items)
+
+                    # Save detections to database
+                    for item in items:
+                        self.conn.execute("""
+                            INSERT INTO furniture_detections (
+                                image_id, item_type, confidence,
+                                bbox_x1, bbox_y1, bbox_x2, bbox_y2,
+                                area_percentage, mask_area, mask_score, has_mask
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, [
+                            metadata.image_id,
+                            item['type'],
+                            item['confidence'],
+                            item['bbox'][0], item['bbox'][1], item['bbox'][2], item['bbox'][3],
+                            item['area_percentage'],
+                            item['mask_area'],
+                            item['mask_score'],
+                            item['has_mask']
+                        ])
+                except Exception as e:
+                    print(f"   ⚠️  Detection failed for {image_path}: {e}")
+
             # Store in database
             self.conn.execute("""
                 INSERT INTO images (
                     image_id, source, dataset_name, original_path, processed_path,
                     room_type, style, room_confidence, style_confidence,
-                    dimensions, color_palette, timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    furniture_count, dimensions, color_palette, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
                 metadata.image_id,
                 metadata.source,
@@ -113,11 +167,12 @@ class BatchProcessor:
                 metadata.style,
                 metadata.room_confidence,
                 metadata.style_confidence,
+                furniture_count,
                 json.dumps(metadata.dimensions) if metadata.dimensions else None,
                 json.dumps(metadata.color_palette) if metadata.color_palette else None,
                 metadata.timestamp
             ])
-            
+
             self.conn.commit()
             return metadata
             
@@ -143,7 +198,7 @@ class BatchProcessor:
         
         return total
     
-    def process_all_in_batches(self, base_dir: Optional[Path] = None, batch_size: int = 64) -> int:
+    def process_all_in_batches(self, base_dir: Optional[Path] = None) -> int:
         """Process all images from the hybrid collection directory"""
         if base_dir is None:
             base_dir = self.config.base_dir

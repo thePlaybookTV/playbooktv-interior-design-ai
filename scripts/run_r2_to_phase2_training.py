@@ -96,8 +96,8 @@ class R2ToPhase2Pipeline:
         print("🔧 STEP 2: PROCESSING IMAGES (PHASE 1)")
         print("="*80)
         print("This will:")
-        print("  - Run YOLO detection on all images")
-        print("  - Classify room types and styles")
+        print("  - Run YOLO+SAM2 detection on all images")
+        print("  - Classify room types and styles with CLIP")
         print("  - Store detections in DuckDB")
         print("="*80)
 
@@ -105,8 +105,12 @@ class R2ToPhase2Pipeline:
         from src.processing.image_processor import DataConfig
         config = DataConfig(base_dir=str(self.output_dir / "processed"))
 
-        # Initialize batch processor with custom config
-        processor = BatchProcessor(db_path=self.db_path, config=config)
+        # Initialize batch processor with detection enabled
+        processor = BatchProcessor(
+            db_path=self.db_path,
+            config=config,
+            enable_detection=True  # ← This enables YOLO+SAM2 detection!
+        )
 
         # Process all images in R2 directory
         count = processor.process_directory(

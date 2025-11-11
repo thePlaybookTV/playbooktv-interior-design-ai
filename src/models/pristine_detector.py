@@ -18,8 +18,8 @@ import numpy as np
 import pandas as pd
 from PIL import Image, ImageDraw
 import duckdb
-from typing import List
 import sys
+from typing import List  # Import List first
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent.parent

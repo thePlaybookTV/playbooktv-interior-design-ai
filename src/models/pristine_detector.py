@@ -71,38 +71,48 @@ def setup_sam2():
 class PristineDetector:
     """Combined YOLO (fast bbox) + SAM2 (precise masks)"""
     
-    def __init__(self):
+    def __init__(self, yolo_model_path: str = None, sam2_checkpoint: str = None, sam2_config: str = None):
+        """
+        Initialize detector with YOLO and SAM2 models.
+
+        Args:
+            yolo_model_path: Path to YOLO model (default: 'yolov8m.pt' or from env YOLO_MODEL_PATH)
+            sam2_checkpoint: Path to SAM2 checkpoint (default: './checkpoints/sam2_hiera_large.pt' or from env SAM2_CHECKPOINT)
+            sam2_config: Path to SAM2 config (default: 'sam2_hiera_l.yaml' or from env SAM2_CONFIG)
+        """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"🎮 Using device: {self.device}")
-        
+
+        # Get model paths from args, env, or defaults
+        yolo_path = yolo_model_path or os.getenv('YOLO_MODEL_PATH', 'yolov8m.pt')
+        sam2_ckpt = sam2_checkpoint or os.getenv('SAM2_CHECKPOINT', './checkpoints/sam2_hiera_large.pt')
+        sam2_cfg = sam2_config or os.getenv('SAM2_CONFIG', 'sam2_hiera_l.yaml')
+
         # Load YOLO
         try:
             from ultralytics import YOLO
-            print("📦 Loading YOLO...")
-            self.yolo = YOLO('yolov8m.pt')
+            print(f"📦 Loading YOLO from {yolo_path}...")
+            self.yolo = YOLO(yolo_path)
             print("✅ YOLO loaded")
-        except:
-            print("❌ YOLO failed")
+        except Exception as e:
+            print(f"❌ YOLO failed: {e}")
             self.yolo = None
-        
+
         # Load SAM2
         try:
             from sam2.build_sam import build_sam2
             from sam2.sam2_image_predictor import SAM2ImagePredictor
-            
-            print("📦 Loading SAM2...")
-            
-            checkpoint = "./checkpoints/sam2_hiera_large.pt"
-            model_cfg = "sam2_hiera_l.yaml"
-            
-            sam2_model = build_sam2(model_cfg, checkpoint, device=self.device)
+
+            print(f"📦 Loading SAM2 from {sam2_ckpt}...")
+
+            sam2_model = build_sam2(sam2_cfg, sam2_ckpt, device=self.device)
             self.sam2 = SAM2ImagePredictor(sam2_model)
             print("✅ SAM2 loaded")
-            
+
         except Exception as e:
             print(f"❌ SAM2 failed: {e}")
             self.sam2 = None
-        
+
         # Furniture classes
         self.furniture_classes = [
             'couch', 'chair', 'bed', 'dining table', 'toilet',

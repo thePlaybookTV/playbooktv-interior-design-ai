@@ -41,7 +41,7 @@ except ImportError:
 def setup_sam2():
     """Install and setup SAM2"""
     print("📦 Setting up SAM2...\n")
-    
+
     # Install SAM2
     try:
         import sam2
@@ -50,22 +50,19 @@ def setup_sam2():
         print("Installing SAM2...")
         os.system("pip install git+https://github.com/facebookresearch/segment-anything-2.git")
         print("✅ SAM2 installed")
-    
+
     # Download checkpoint
     checkpoint_dir = Path("./checkpoints")
     checkpoint_dir.mkdir(exist_ok=True)
-    
+
     checkpoint_path = checkpoint_dir / "sam2_hiera_large.pt"
-    
+
     if not checkpoint_path.exists():
         print("\n📥 Downloading SAM2 checkpoint (~900MB)...")
         os.system(f"wget -O {checkpoint_path} https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt")
         print("✅ Checkpoint downloaded")
     else:
         print("✅ Checkpoint already exists")
-
-# Run setup
-setup_sam2()
 
 # ============================================
 # STEP 2: COMBINED YOLO + SAM2 DETECTOR
@@ -436,40 +433,44 @@ class CheckpointProcessor:
         self.conn.close()
 
 # ============================================
-# STEP 4: RUN PROCESSING
+# STEP 4: RUN PROCESSING (Standalone Mode)
 # ============================================
 
-print("=" * 70)
-print("🚀 PRISTINE MVP: SAM2 + YOLO DETECTION PIPELINE")
-print("=" * 70)
-print("\n📊 Your Setup:")
-print("   GPU: A4000 (16GB) ✅")
-print("   RAM: 45GB ✅")
-print("   CPU: 8 cores ✅")
-print("\n⏱️  Time limit: 5 hours")
-print("💾 Auto-checkpointing: Every 500 images")
-print("🔄 Resumable: Can continue if interrupted\n")
-print("=" * 70)
+if __name__ == "__main__":
+    # Only run setup and processing when executed directly, not when imported
+    setup_sam2()
 
-# Path to database
-db_path = "./interior_design_data_hybrid/processed/metadata.duckdb"
+    print("=" * 70)
+    print("🚀 PRISTINE MVP: SAM2 + YOLO DETECTION PIPELINE")
+    print("=" * 70)
+    print("\n📊 Your Setup:")
+    print("   GPU: A4000 (16GB) ✅")
+    print("   RAM: 45GB ✅")
+    print("   CPU: 8 cores ✅")
+    print("\n⏱️  Time limit: 5 hours")
+    print("💾 Auto-checkpointing: Every 500 images")
+    print("🔄 Resumable: Can continue if interrupted\n")
+    print("=" * 70)
 
-# Create processor
-processor = CheckpointProcessor(db_path)
+    # Path to database
+    db_path = "./interior_design_data_hybrid/processed/metadata.duckdb"
 
-# Process all images
-print("\n🎬 Starting processing...\n")
-processor.process_all(
-    batch_size=100,
-    checkpoint_interval=500
-)
+    # Create processor
+    processor = CheckpointProcessor(db_path)
 
-# Show statistics
-processor.show_stats()
+    # Process all images
+    print("\n🎬 Starting processing...\n")
+    processor.process_all(
+        batch_size=100,
+        checkpoint_interval=500
+    )
 
-# Close
-processor.close()
+    # Show statistics
+    processor.show_stats()
 
-print("\n🎉 PROCESSING COMPLETE!")
-print("✅ All detections have YOLO bboxes + SAM2 masks")
-print("📁 Database: " + str(db_path))
+    # Close
+    processor.close()
+
+    print("\n🎉 PROCESSING COMPLETE!")
+    print("✅ All detections have YOLO bboxes + SAM2 masks")
+    print("📁 Database: " + str(db_path))

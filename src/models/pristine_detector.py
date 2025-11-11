@@ -4,22 +4,35 @@
 # Processes 67K images with checkpoints
 # ============================================
 
-# import os
-# import json
-# import time
-# from pathlib import Path
-# from datetime import datetime
-# from tqdm.auto import tqdm
-# import warnings
-# warnings.filterwarnings('ignore')
+import os
+import json
+import time
+from pathlib import Path
+from datetime import datetime
+from tqdm.auto import tqdm
+import warnings
+warnings.filterwarnings('ignore')
 
-# import torch
-# import numpy as np
-# import pandas as pd
-# from PIL import Image, ImageDraw
-# import duckdb
+import torch
+import numpy as np
+import pandas as pd
+from PIL import Image, ImageDraw
+import duckdb
+from typing import List
+import sys
 
-# print("✅ Imports loaded\n")
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+try:
+    from interior_taxonomy import get_items_by_room, get_items_by_style
+except ImportError:
+    # Fallback if taxonomy not available
+    def get_items_by_room(room_type: str) -> List[str]:
+        return []
+    def get_items_by_style(style: str) -> List[str]:
+        return []
 
 # ============================================
 # STEP 1: INSTALL SAM2

@@ -17,9 +17,15 @@ from pathlib import Path
 import os
 from datetime import datetime
 
-# Setup logging FIRST (before anything else)
+# Load .env file FIRST
+from dotenv import load_dotenv
+env_path = Path(__file__).parent / ".env"
+load_dotenv(env_path)
+
+# Setup logging (after loading .env)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.info(f"📋 Loaded environment from: {env_path}")
 
 # Fix Python path to find src module
 import sys
@@ -33,6 +39,7 @@ try:
     from src.models.pristine_detector import PristineDetector
     from src.models.color_extractor import MaskBasedColorExtractor
     from src.models.shape_feature_extractor import ShapeFeatureExtractor
+    from src.models.phase1_model import Phase1InteriorDesignModel
     from ultralytics import YOLO
     logger.info("✅ Model imports successful")
 except ImportError as e:
@@ -66,6 +73,7 @@ app.add_middleware(
 models = {
     "yolo": None,
     "pristine_detector": None,  # YOLO + SAM2
+    "room_classifier": None,  # Phase 1 room classification
     "style_ensemble": None,
     "mask_enhanced_ensemble": None,  # Mask-enhanced style classifier
     "color_extractor": None,
@@ -90,8 +98,10 @@ class Config:
 
     # Categories
     ROOM_TYPES = ['living_room', 'bedroom', 'kitchen', 'dining_room', 'bathroom', 'home_office']
-    STYLES = ['modern', 'traditional', 'contemporary', 'minimalist', 'scandinavian',
-              'industrial', 'bohemian', 'mid_century_modern', 'rustic']
+    # Phase 2 trained with 12 styles from the database
+    STYLES = ['bohemian', 'coastal', 'contemporary', 'eclectic', 'industrial',
+              'mid_century_modern', 'minimalist', 'modern', 'rustic', 'scandinavian',
+              'traditional', 'transitional']
 
 config = Config()
 
@@ -132,8 +142,9 @@ async def load_models():
     logger.info("Loading models...")
 
     try:
-        # Load PristineDetector (YOLO + SAM2) if enabled
+        # Load YOLO model (Phase 2 fine-tuned or PristineDetector)
         if config.USE_SAM2:
+            # Use PristineDetector (YOLO + SAM2) for segmentation masks
             logger.info("Loading PristineDetector (YOLO + SAM2)...")
             try:
                 models["pristine_detector"] = PristineDetector()
@@ -143,14 +154,21 @@ async def load_models():
                 logger.info("Falling back to YOLO-only mode")
                 config.USE_SAM2 = False
 
-        # Load YOLO (fallback or standalone)
+        # Load YOLO standalone (Phase 2 fine-tuned model or fallback)
         if not config.USE_SAM2:
-            if Path(config.YOLO_MODEL_PATH).exists():
-                logger.info(f"Loading YOLO from {config.YOLO_MODEL_PATH}")
-                models["yolo"] = YOLO(config.YOLO_MODEL_PATH)
-                logger.info("✅ YOLO loaded")
+            yolo_path = Path(config.YOLO_MODEL_PATH)
+            if yolo_path.exists():
+                logger.info(f"Loading Phase 2 YOLO from {config.YOLO_MODEL_PATH}")
+                try:
+                    models["yolo"] = YOLO(config.YOLO_MODEL_PATH)
+                    logger.info(f"✅ YOLO loaded successfully ({len(models['yolo'].names)} classes)")
+                except Exception as e:
+                    logger.error(f"❌ Failed to load YOLO: {e}")
+                    raise
             else:
-                logger.warning(f"⚠️ YOLO model not found at {config.YOLO_MODEL_PATH}")
+                logger.error(f"❌ YOLO model not found at {config.YOLO_MODEL_PATH}")
+                logger.error(f"   Please verify the path in .env file")
+                raise FileNotFoundError(f"YOLO model not found: {config.YOLO_MODEL_PATH}")
 
         # Load Mask-Enhanced Style Ensemble (if available)
         mask_enhanced_dir = Path(config.MASK_ENHANCED_DIR)
@@ -207,6 +225,28 @@ async def load_models():
             models["color_extractor"] = MaskBasedColorExtractor(config.DB_PATH)
             models["shape_extractor"] = ShapeFeatureExtractor(config.DB_PATH)
             logger.info("✅ Feature extractors loaded")
+
+        # Load Phase 1 model for room classification
+        phase1_path = project_root / "models_best_interior_model.pth"
+        if phase1_path.exists():
+            logger.info("Loading Phase 1 model for room classification...")
+            try:
+                checkpoint = torch.load(str(phase1_path), map_location=models["device"])
+
+                room_model = Phase1InteriorDesignModel(
+                    num_rooms=len(checkpoint['room_types']),
+                    num_styles=len(checkpoint['styles'])
+                )
+                room_model.load_state_dict(checkpoint['model_state_dict'])
+                room_model.eval()
+                room_model.to(models["device"])
+
+                models["room_classifier"] = room_model
+                config.ROOM_TYPES = checkpoint['room_types']
+
+                logger.info(f"✅ Room classifier loaded (6 types, 70% accuracy)")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not load room classifier: {e}")
 
         logger.info(f"🎮 Using device: {models['device']}")
         logger.info(f"🎭 SAM2 enabled: {config.USE_SAM2}")
@@ -317,6 +357,9 @@ async def analyze_image(file: UploadFile = File(...)):
                 result = models["pristine_detector"].detect_with_masks(tmp.name)
                 os.unlink(tmp.name)
 
+            # Convert PIL image to numpy for color extraction
+            image_np = np.array(image)
+
             for item in result.get('items', []):
                 detection = {
                     "item_type": item['type'],
@@ -329,14 +372,19 @@ async def analyze_image(file: UploadFile = File(...)):
                 }
 
                 # Extract colors if mask available and color extractor loaded
-                if item.get('has_mask') and models["color_extractor"]:
+                if item.get('has_mask') and item.get('mask') is not None and models["color_extractor"]:
                     try:
-                        # Create mask from detection
-                        # In production, would use actual SAM2 mask
-                        # For now, approximate from bbox
-                        pass  # TODO: Extract colors from actual mask
-                    except:
-                        pass
+                        # Extract colors from actual SAM2 mask
+                        mask_array = np.array(item['mask'])
+                        color_features = models["color_extractor"].extract_colors_from_mask(
+                            image_np, mask_array, n_colors=3
+                        )
+                        detection['colors'] = {
+                            'palette': color_features.get('palette', []),
+                            'dominant': color_features.get('dominant_color', None)
+                        }
+                    except Exception as e:
+                        logger.warning(f"Color extraction failed for {item['type']}: {e}")
 
                 detections.append(detection)
 
@@ -364,6 +412,25 @@ async def analyze_image(file: UploadFile = File(...)):
                             "area_percentage": area_pct,
                             "has_mask": False
                         })
+
+        # Run room classification
+        room_result = None
+        if models.get("room_classifier"):
+            try:
+                image_tensor = preprocess_image(image).to(models["device"])
+                furniture_features = extract_furniture_context(detections).unsqueeze(0).to(models["device"])
+
+                with torch.no_grad():
+                    room_logits, _ = models["room_classifier"](image_tensor, furniture_features)
+                    room_probs = torch.softmax(room_logits, dim=1)[0]
+                    room_idx = room_probs.argmax().item()
+
+                    room_result = {
+                        "room_type": config.ROOM_TYPES[room_idx],
+                        "confidence": float(room_probs[room_idx])
+                    }
+            except Exception as e:
+                logger.error(f"Room classification error: {e}")
 
         # Run style classification
         style_result = None
@@ -405,6 +472,7 @@ async def analyze_image(file: UploadFile = File(...)):
                 "confidence": 0.0,
                 "all_probabilities": {}
             },
+            "room": room_result,
             "processing_time_ms": processing_time
         }
 

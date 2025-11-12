@@ -524,14 +524,15 @@ def plot_history(history):
 # RUN TRAINING
 # ============================================
 
-db_path = "./interior_design_data_hybrid/processed/metadata.duckdb"
+if __name__ == "__main__":
+    db_path = "./interior_design_data_hybrid/processed/metadata.duckdb"
 
-history, model = train_model(
-    db_path=db_path,
-    num_epochs=25,
-    batch_size=32
-)
+    history, model = train_model(
+        db_path=db_path,
+        num_epochs=25,
+        batch_size=32
+    )
 
-print("\n🎉 Your Pristine MVP model is ready!")
-print("📁 Model saved: pristine_mvp_model.pth")
-print("📊 History saved: training_history.png")
+    print("\n🎉 Your Pristine MVP model is ready!")
+    print("📁 Model saved: pristine_mvp_model.pth")
+    print("📊 History saved: training_history.png")

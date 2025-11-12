@@ -29,18 +29,18 @@ image = (
     # Install system dependencies first (including git for SAM2)
     .apt_install("libgl1-mesa-glx", "libglib2.0-0", "git")
     .pip_install(
-        # Core ML
-        "torch==2.2.0",
-        "torchvision==0.17.0",
-        "transformers==4.38.0",
-        "accelerate==0.27.0",
-        "timm==0.9.0",
+        # Core ML (torch 2.5.1+ required for SAM2)
+        "torch>=2.5.1",
+        "torchvision>=0.20.1",
+        "transformers>=4.38.0",
+        "accelerate>=0.27.0",
+        "timm>=0.9.0",
         # SD & ControlNet
         "diffusers==0.27.0",
         "safetensors==0.4.0",
         # YOLO & SAM2
         "ultralytics==8.0.0",
-        "segment-anything-2 @ git+https://github.com/facebookresearch/segment-anything-2.git",
+        "sam-2 @ git+https://github.com/facebookresearch/segment-anything-2.git",
         # Image processing
         "opencv-python>=4.8.1",
         "Pillow>=10.2.0",
@@ -158,7 +158,7 @@ def upload_to_r2(image_bytes: bytes, key: str, r2_config: dict) -> str:
     gpu="T4",  # NVIDIA T4 GPU (£0.30/hour)
     image=image,
     timeout=120,  # 2 minutes max
-    container_idle_timeout=300,  # Keep warm for 5 minutes
+    scaledown_window=300,  # Keep warm for 5 minutes (renamed from container_idle_timeout)
     retries=2
 )
 class CompleteTransformationPipeline:

@@ -29,7 +29,7 @@ class ModalService:
 
     def __init__(
         self,
-        stub_name: Optional[str] = None,
+        app_name: Optional[str] = None,
         token_id: Optional[str] = None,
         token_secret: Optional[str] = None
     ):
@@ -37,11 +37,11 @@ class ModalService:
         Initialize Modal service
 
         Args:
-            stub_name: Modal stub name (default: from env)
+            app_name: Modal app name (default: from env)
             token_id: Modal token ID (default: from env)
             token_secret: Modal token secret (default: from env)
         """
-        self.stub_name = stub_name or os.getenv("MODAL_STUB_NAME", "modomo-sd-inference")
+        self.app_name = app_name or os.getenv("MODAL_APP_NAME") or os.getenv("MODAL_STUB_NAME", "modomo-sd-inference")
         self.token_id = token_id or os.getenv("MODAL_TOKEN_ID")
         self.token_secret = token_secret or os.getenv("MODAL_TOKEN_SECRET")
 
@@ -53,23 +53,23 @@ class ModalService:
         # Initialize Modal client
         self._init_modal()
 
-        logger.info(f"ModalService initialized with stub: {self.stub_name}")
+        logger.info(f"ModalService initialized with app: {self.app_name}")
 
     def _init_modal(self):
-        """Initialize Modal client and lookup stub"""
+        """Initialize Modal client and lookup app"""
         try:
             # Set Modal credentials
             os.environ["MODAL_TOKEN_ID"] = self.token_id
             os.environ["MODAL_TOKEN_SECRET"] = self.token_secret
 
-            # Lookup deployed stub
+            # Lookup deployed app
             try:
-                self.stub = modal.Stub.lookup(self.stub_name, create_if_missing=False)
-                logger.info(f"✓ Connected to Modal stub: {self.stub_name}")
+                self.app = modal.App.lookup(self.app_name, create_if_missing=False)
+                logger.info(f"✓ Connected to Modal app: {self.app_name}")
             except Exception as e:
-                logger.warning(f"⚠️ Could not lookup Modal stub: {e}")
-                logger.warning("Modal stub may not be deployed yet. Deploy with: modal deploy")
-                self.stub = None
+                logger.warning(f"⚠️ Could not lookup Modal app: {e}")
+                logger.warning("Modal app may not be deployed yet. Deploy with: modal deploy")
+                self.app = None
 
         except Exception as e:
             logger.error(f"✗ Failed to initialize Modal: {e}")
@@ -101,17 +101,17 @@ class ModalService:
         Raises:
             Exception: If Modal submission fails
         """
-        if not self.stub:
-            raise Exception("Modal stub not initialized. Please deploy Modal function first.")
+        if not self.app:
+            raise Exception("Modal app not initialized. Please deploy Modal function first.")
 
         logger.info(f"Submitting job {job_id} to Modal...")
 
         try:
             # Get the transformation function from Modal
-            transform_function = self.stub.cls.lookup("process_transformation_complete")
+            transform_function = self.app.cls.lookup("CompleteTransformationPipeline")
 
-            # Submit to Modal (async)
-            call = transform_function.spawn(
+            # Submit to Modal (async) - call the method on the class
+            call = transform_function.process_transformation_complete.spawn(
                 job_id=job_id,
                 image_url=image_url,
                 style=style,
@@ -141,8 +141,8 @@ class ModalService:
         Returns:
             Status dictionary with keys: status, progress, error
         """
-        if not self.stub:
-            return {"status": "error", "error": "Modal stub not initialized"}
+        if not self.app:
+            return {"status": "error", "error": "Modal app not initialized"}
 
         try:
             # Get function call
@@ -185,7 +185,7 @@ class ModalService:
         Returns:
             True if cancelled successfully
         """
-        if not self.stub:
+        if not self.app:
             return False
 
         try:
@@ -200,12 +200,12 @@ class ModalService:
 
     def is_deployed(self) -> bool:
         """
-        Check if Modal stub is deployed
+        Check if Modal app is deployed
 
         Returns:
-            True if stub is deployed and accessible
+            True if app is deployed and accessible
         """
-        return self.stub is not None
+        return self.app is not None
 
     async def health_check(self) -> Dict:
         """
@@ -215,8 +215,8 @@ class ModalService:
             Health status dictionary
         """
         return {
-            "modal_connected": self.stub is not None,
-            "stub_name": self.stub_name,
+            "modal_connected": self.app is not None,
+            "app_name": self.app_name,
             "deployed": self.is_deployed()
         }
 
@@ -269,7 +269,7 @@ if __name__ == "__main__":
             except Exception as e:
                 print(f"✗ Test failed: {e}")
         else:
-            print("⚠️ Modal stub not deployed. Deploy with: modal deploy")
+            print("⚠️ Modal app not deployed. Deploy with: modal deploy")
 
     # Run test
     asyncio.run(test_modal_service())

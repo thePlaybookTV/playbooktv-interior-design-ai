@@ -133,7 +133,7 @@ async def startup():
 
         # Check Modal deployment
         if not services["modal"].is_deployed():
-            logger.warning("⚠️ Modal stub not deployed!")
+            logger.warning("⚠️ Modal app not deployed!")
             logger.warning("   Deploy with: modal deploy modal_functions/sd_inference_complete.py")
 
         logger.info("✨ All services initialized successfully")

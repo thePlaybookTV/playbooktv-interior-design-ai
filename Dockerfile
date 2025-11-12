@@ -18,14 +18,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Copy Railway-specific minimal requirements (for layer caching)
-COPY requirements-railway-minimal.txt .
+# Copy requirements (for layer caching)
+COPY requirements.txt .
 
 # Upgrade pip and setuptools to avoid build issues
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install Python dependencies (minimal - API only, no ML models)
-RUN pip install --no-cache-dir -r requirements-railway-minimal.txt
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
@@ -41,4 +41,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD python -c "import requests; requests.get('http://localhost:8000/health')"
 
 # Start command (Railway will override with Procfile if present)
-CMD ["uvicorn", "api.main_minimal:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

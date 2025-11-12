@@ -29,12 +29,12 @@ image = (
     # Install system dependencies first (including git for SAM2)
     .apt_install("libgl1-mesa-glx", "libglib2.0-0", "git")
     .pip_install(
-        # Core ML (torch 2.5.1+ required for SAM2)
-        "torch>=2.5.1",
-        "torchvision>=0.20.1",
-        "transformers>=4.38.0",
-        "accelerate>=0.27.0",
-        "timm>=0.9.0",
+        # Core ML - pinned versions for faster resolution
+        "torch==2.5.1",
+        "torchvision==0.20.1",
+        "transformers==4.38.0",
+        "accelerate==0.27.0",
+        "timm==1.0.3",
         # SD & ControlNet
         "diffusers==0.27.0",
         "safetensors==0.4.0",
@@ -42,10 +42,10 @@ image = (
         "ultralytics==8.0.0",
         "sam-2 @ git+https://github.com/facebookresearch/segment-anything-2.git",
         # Image processing
-        "opencv-python>=4.8.1",
-        "Pillow>=10.2.0",
-        "scikit-image>=0.21.0",
-        "numpy>=1.24.0,<2.0.0",
+        "opencv-python==4.9.0.80",
+        "Pillow==10.2.0",
+        "scikit-image==0.22.0",
+        "numpy==1.26.4",
         # Storage & Redis
         "boto3==1.28.0",
         "redis==5.0.0",

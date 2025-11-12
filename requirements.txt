@@ -1,25 +1,25 @@
 # Core Dependencies
-torch>=2.0.0
-torchvision>=0.15.0
-torchaudio>=2.0.0
+torch>=2.6.0
+torchvision>=0.17.0
+torchaudio>=2.1.0
 
 # Computer Vision
-opencv-python>=4.8.0
-Pillow>=10.0.0
+opencv-python>=4.8.1.78
+Pillow>=10.3.0
 ultralytics>=8.0.0
 
 # Segment Anything 2
 git+https://github.com/facebookresearch/segment-anything-2.git
 
 # Transformers & NLP
-transformers>=4.30.0
+transformers>=4.53.0
 tokenizers>=0.13.0
 
 # Data Processing
 pandas>=2.0.0
 numpy>=1.24.0
 duckdb>=0.9.0
-pyarrow>=13.0.0
+pyarrow>=14.0.1
 fastparquet>=2023.7.0
 
 # Data Sources
@@ -29,22 +29,42 @@ kaggle>=1.5.16
 roboflow>=1.1.0
 
 # ML & Clustering
-scikit-learn>=1.3.0
+scikit-learn>=1.5.0
 
 # Visualization
 matplotlib>=3.7.0
 seaborn>=0.12.0
 
 # Utilities
-tqdm>=4.65.0
-requests>=2.31.0
+tqdm>=4.66.3
+requests>=2.32.4
 python-dotenv>=1.0.0
 
 # Cloud Storage (Cloudflare R2 - S3 Compatible)
 boto3>=1.28.0
 botocore>=1.31.0
 
+# API Server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+websockets>=12.0
+
+# Redis for job queue
+redis>=5.0.0
+hiredis>=2.2.0
+
+# Modal for serverless GPU
+modal>=0.57.0
+
+# Depth estimation for ControlNet
+timm>=0.9.0
+
+# Image processing for control images
+scikit-image>=0.21.0
+
 # Development
 pytest>=7.4.0
-black>=23.7.0
+black>=24.3.0
 flake8>=6.1.0
+pytest-asyncio>=0.21.0

@@ -42,10 +42,10 @@ image = (
         "ultralytics==8.0.0",
         "segment-anything-2 @ git+https://github.com/facebookresearch/segment-anything-2.git",
         # Image processing
-        "opencv-python==4.8.0",
-        "Pillow==10.2.0",
-        "scikit-image==0.21.0",
-        "numpy==1.24.0",
+        "opencv-python>=4.8.1",
+        "Pillow>=10.2.0",
+        "scikit-image>=0.21.0",
+        "numpy>=1.24.0,<2.0.0",
         # Storage & Redis
         "boto3==1.28.0",
         "redis==5.0.0",

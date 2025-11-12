@@ -17,9 +17,9 @@ uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 websockets>=12.0
 
-# Redis for job queue
+# Redis for job queue (sync and async)
 redis>=5.0.0
-hiredis>=2.2.0
+redis[hiredis]>=5.0.0  # Includes hiredis for performance
 
 # Modal SDK (lightweight client)
 modal>=0.57.0

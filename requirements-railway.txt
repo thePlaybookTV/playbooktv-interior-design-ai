@@ -1,0 +1,51 @@
+# ============================================================================
+# Railway Deployment Requirements (Lightweight)
+# ============================================================================
+# This is a minimal requirements file for Railway API deployment
+# Excludes heavy ML models (YOLO, SAM2) which run on Modal instead
+# ============================================================================
+
+# Core Dependencies (minimal)
+numpy>=1.24.0
+Pillow>=10.3.0
+
+# Computer Vision (for control image generation only)
+opencv-python-headless>=4.8.1.78  # Headless version (no GUI, smaller)
+scikit-image>=0.21.0
+
+# Transformers (for depth estimation only - DPT model)
+transformers>=4.53.0
+torch>=2.6.0  # Required for transformers/depth model
+torchvision>=0.17.0
+timm>=0.9.0  # For DPT depth estimation
+
+# API Server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+websockets>=12.0
+
+# Redis for job queue
+redis>=5.0.0
+hiredis>=2.2.0
+
+# Modal for serverless GPU
+modal>=0.57.0
+
+# Cloud Storage (Cloudflare R2 - S3 Compatible)
+boto3>=1.28.0
+botocore>=1.31.0
+
+# Utilities
+requests>=2.32.4
+python-dotenv>=1.0.0
+
+# ============================================================================
+# EXCLUDED from Railway (runs on Modal GPU instead):
+# ============================================================================
+# - ultralytics (YOLO) - Heavy, runs on Modal
+# - SAM2 - Heavy, runs on Modal
+# - Full training dependencies (pandas, duckdb, datasets, etc.)
+# - Visualization libraries (matplotlib, seaborn)
+# - Data collection tools (kaggle, roboflow)
+# ============================================================================

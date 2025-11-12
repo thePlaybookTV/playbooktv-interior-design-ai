@@ -1,7 +1,7 @@
 # Modomo Backend - Railway Deployment
 # Multi-stage build for optimized image size
 
-FROM python:3.11-slim as base
+FROM python:3.11.11-slim as base
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -9,10 +9,8 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies
+# Install minimal system dependencies (only what's needed for opencv-headless)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    git \
     libgl1-mesa-glx \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
@@ -20,11 +18,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first (for layer caching)
-COPY requirements.txt .
+# Copy Railway-specific minimal requirements (for layer caching)
+COPY requirements-railway-minimal.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Upgrade pip and setuptools to avoid build issues
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install Python dependencies (minimal - API only, no ML models)
+RUN pip install --no-cache-dir -r requirements-railway-minimal.txt
 
 # Copy application code
 COPY . .

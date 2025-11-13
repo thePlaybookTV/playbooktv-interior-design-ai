@@ -37,7 +37,8 @@ image = (
         "timm==1.0.3",
         # SD & ControlNet
         "diffusers==0.27.0",
-        "safetensors==0.4.0",
+        "huggingface_hub==0.20.3",  # Compatible with diffusers 0.27.0
+        "safetensors==0.4.1",
         # YOLO & SAM2
         "ultralytics==8.0.0",
         "sam-2 @ git+https://github.com/facebookresearch/segment-anything-2.git",
@@ -56,10 +57,10 @@ image = (
     .run_commands(
         # Pre-download SD 1.5 and ControlNet models during build
         "python -c '"
-        "from diffusers import StableDiffusionControlNetPipeline, ControlNetModel; "
+        "from diffusers import StableDiffusionPipeline, ControlNetModel; "
         "ControlNetModel.from_pretrained(\"lllyasviel/control_v11f1p_sd15_depth\"); "
         "ControlNetModel.from_pretrained(\"lllyasviel/control_v11p_sd15_canny\"); "
-        "StableDiffusionControlNetPipeline.from_pretrained(\"runwayml/stable-diffusion-v1-5\")"
+        "StableDiffusionPipeline.from_pretrained(\"runwayml/stable-diffusion-v1-5\")"
         "'"
     )
 )

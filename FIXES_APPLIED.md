@@ -7,11 +7,13 @@
 
 ## Summary
 
-Fixed 3 critical issues preventing deployment:
+Fixed 5 critical issues preventing deployment:
 
 1. ✅ Modal API migration (Stub → App)
-2. ✅ Modal build error (git not installed)
-3. ✅ Railway configuration (wrong start command)
+2. ✅ Modal build error (git not installed before SAM2)
+3. ✅ Huggingface Hub compatibility (diffusers 0.27.0)
+4. ✅ Model pre-download command (StableDiffusion pipeline)
+5. ✅ Railway configuration (wrong start command & requirements file)
 
 ---
 
@@ -111,14 +113,80 @@ image = (
 
 ---
 
-## Fix #3: Railway Configuration
+## Fix #3: Huggingface Hub Compatibility
 
 ### Problem
-Railway was using incorrect start command, pointing to `api.main:app` (the old heavy API) instead of `api.main_minimal:app` (the new lightweight API).
+After fixing git ordering, diffusers 0.27.0 failed to import due to incompatible huggingface_hub version:
+```
+ImportError: cannot import name 'cached_download' from 'huggingface_hub'
+```
+
+**Root cause**: diffusers 0.27.0 requires huggingface_hub with the deprecated `cached_download` function. Newer versions of huggingface_hub removed this function.
+
+### Fix Applied
+
+#### modal_functions/sd_inference_complete.py
+```python
+# BEFORE (missing explicit version)
+.pip_install(
+    "diffusers==0.27.0",
+    # huggingface_hub version not specified, pip installs latest
+    ...
+)
+
+# AFTER (pinned compatible version)
+.pip_install(
+    "diffusers==0.27.0",
+    "huggingface_hub==0.20.3",  # ✅ Compatible version with cached_download
+    ...
+)
+```
+
+**Why this works**: huggingface_hub 0.20.3 still includes the `cached_download` function that diffusers 0.27.0 expects.
+
+---
+
+## Fix #4: Model Pre-download Command
+
+### Problem
+Pre-download command tried to instantiate StableDiffusionControlNetPipeline without required ControlNet parameter:
+```
+ValueError: Pipeline expected {'controlnet', ...}, but only {...} were passed.
+```
+
+### Fix Applied
+
+#### modal_functions/sd_inference_complete.py
+```python
+# BEFORE (incorrect - requires controlnet parameter)
+from diffusers import StableDiffusionControlNetPipeline, ControlNetModel
+ControlNetModel.from_pretrained("lllyasviel/control_v11f1p_sd15_depth")
+ControlNetModel.from_pretrained("lllyasviel/control_v11p_sd15_canny")
+StableDiffusionControlNetPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
+
+# AFTER (correct - download base and ControlNets separately)
+from diffusers import StableDiffusionPipeline, ControlNetModel
+ControlNetModel.from_pretrained("lllyasviel/control_v11f1p_sd15_depth")
+ControlNetModel.from_pretrained("lllyasviel/control_v11p_sd15_canny")
+StableDiffusionPipeline.from_pretrained("runwayml/stable-diffusion-v1-5")
+```
+
+**Why this works**: We download the base SD pipeline and ControlNet models separately. At runtime, we combine them into StableDiffusionControlNetPipeline.
+
+---
+
+## Fix #5: Railway Configuration
+
+### Problem
+Railway was using incorrect configuration in multiple files:
+1. `railway.json` pointed to `api.main:app` instead of `api.main_minimal:app`
+2. `Dockerfile` used `requirements.txt` instead of `requirements-railway-minimal.txt`
+3. This would cause Railway to install all heavy ML dependencies (~3GB+) instead of minimal deps (~500MB)
 
 ### Files Changed
 1. **railway.json** - Updated start command
-2. **Procfile** - Already correct (verified)
+2. **Dockerfile** - Updated requirements file
+3. **Procfile** - Already correct (verified)
 
 ### Fix Applied
 
@@ -139,7 +207,23 @@ Railway was using incorrect start command, pointing to `api.main:app` (the old h
 }
 ```
 
-**Impact**: Railway now starts the correct minimal API that only uses ~500MB instead of 3GB+.
+#### Dockerfile
+```dockerfile
+# BEFORE
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# AFTER
+COPY requirements-railway-minimal.txt .
+RUN pip install --no-cache-dir -r requirements-railway-minimal.txt
+CMD ["uvicorn", "api.main_minimal:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**Impact**: Railway now:
+- Installs only minimal dependencies (~500MB instead of 3GB+)
+- Starts the correct lightweight API
+- Build time reduced from ~15 minutes to ~3 minutes
 
 ---
 

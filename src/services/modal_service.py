@@ -108,34 +108,21 @@ class ModalService:
         logger.info(f"Submitting job {job_id} to Modal...")
 
         try:
-            # Import modal here to ensure it uses the credentials we set
-            import modal
-
-            # Set Modal credentials explicitly
+            # Set Modal credentials
             os.environ["MODAL_TOKEN_ID"] = self.token_id
             os.environ["MODAL_TOKEN_SECRET"] = self.token_secret
 
-            # For Modal SDK 0.57+, we need to import the module and let Modal handle the rest
-            # Import the modal_functions module
-            import sys
-            import importlib.util
+            import modal
 
-            # Load the Modal app module
-            spec = importlib.util.spec_from_file_location(
-                "sd_inference_complete",
-                str(Path(__file__).parent.parent.parent / "modal_functions" / "sd_inference_complete.py")
+            # Reference the deployed function directly using Modal's from_name API
+            # This gets a handle to the already-deployed function
+            process_fn = modal.Function.from_name(
+                self.app_name,
+                "CompleteTransformationPipeline.process_transformation_complete"
             )
-            modal_module = importlib.util.module_from_spec(spec)
-            sys.modules["sd_inference_complete"] = modal_module
-            spec.loader.exec_module(modal_module)
 
-            # Get the class from the loaded module
-            CompleteTransformationPipeline = modal_module.CompleteTransformationPipeline
-
-            # Create an instance and call spawn
-            # spawn() returns a function call handle immediately without waiting
-            pipeline = CompleteTransformationPipeline()
-            call = pipeline.process_transformation_complete.spawn(
+            # Spawn the function call (async execution)
+            call = process_fn.spawn(
                 job_id=job_id,
                 image_url=image_url,
                 style=style,

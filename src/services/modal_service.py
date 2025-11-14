@@ -107,24 +107,24 @@ class ModalService:
         logger.info(f"Submitting job {job_id} to Modal...")
 
         try:
-            # Ensure Modal credentials are in environment
+            # Ensure Modal credentials are set
             os.environ["MODAL_TOKEN_ID"] = self.token_id
             os.environ["MODAL_TOKEN_SECRET"] = self.token_secret
 
-            # Import and use the deployed app with context
-            from modal_functions.sd_inference_complete import app as deployed_app, CompleteTransformationPipeline
+            # Import the deployed function
+            from modal_functions.sd_inference_complete import CompleteTransformationPipeline
 
-            # Run within the app context to hydrate the functions
-            with deployed_app.run():
-                # Now we can call the remote method
-                call = CompleteTransformationPipeline().process_transformation_complete.remote(
-                    job_id=job_id,
-                    image_url=image_url,
-                    style=style,
-                    room_type=room_type,
-                    preferences=preferences or {},
-                    redis_url=redis_url or os.getenv("REDIS_URL")
-                )
+            # Call spawn() for async execution - returns immediately
+            # Modal handles authentication and execution on their infrastructure
+            pipeline = CompleteTransformationPipeline()
+            call = pipeline.process_transformation_complete.spawn(
+                job_id=job_id,
+                image_url=image_url,
+                style=style,
+                room_type=room_type,
+                preferences=preferences or {},
+                redis_url=redis_url or os.getenv("REDIS_URL")
+            )
 
             # Get call ID for tracking
             modal_call_id = call.object_id

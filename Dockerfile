@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first (for layer caching)
+# Copy requirements (for layer caching)
 COPY requirements-railway-minimal.txt .
 
 # Upgrade pip and setuptools to avoid build issues

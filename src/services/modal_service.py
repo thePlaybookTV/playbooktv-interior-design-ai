@@ -108,10 +108,10 @@ class ModalService:
 
         try:
             # Get the transformation function from Modal
-            transform_function = self.app.cls.lookup("CompleteTransformationPipeline")
+            transform_function = modal.Cls.lookup(self.app_name, "CompleteTransformationPipeline")
 
             # Submit to Modal (async) - call the method on the class
-            call = transform_function.process_transformation_complete.spawn(
+            call = transform_function().process_transformation_complete.spawn(
                 job_id=job_id,
                 image_url=image_url,
                 style=style,

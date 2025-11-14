@@ -107,11 +107,14 @@ class ModalService:
         logger.info(f"Submitting job {job_id} to Modal...")
 
         try:
-            # Get the transformation function from Modal
-            transform_function = modal.Cls.lookup(self.app_name, "CompleteTransformationPipeline")
+            # Get the Modal app
+            app = modal.App.lookup(self.app_name)
 
-            # Submit to Modal (async) - call the method on the class
-            call = transform_function().process_transformation_complete.spawn(
+            # Get the transformation class
+            CompleteTransformationPipeline = modal.Cls.from_name(app, "CompleteTransformationPipeline")
+
+            # Submit to Modal (async)
+            call = CompleteTransformationPipeline().process_transformation_complete.spawn(
                 job_id=job_id,
                 image_url=image_url,
                 style=style,

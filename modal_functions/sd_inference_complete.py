@@ -170,6 +170,7 @@ class CompleteTransformationPipeline:
     Includes all heavy processing that was removed from Railway
     """
 
+    @modal.enter()
     def __enter__(self):
         """Load all models when container starts"""
         import torch

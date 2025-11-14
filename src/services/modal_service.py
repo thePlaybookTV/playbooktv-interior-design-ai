@@ -107,12 +107,12 @@ class ModalService:
         logger.info(f"Submitting job {job_id} to Modal...")
 
         try:
-            # Use the app object we already have from initialization
-            # Access the class using attribute access
-            pipeline_cls = self.app.CompleteTransformationPipeline
+            # Import the deployed app's class reference
+            # This is the correct way to call deployed Modal functions from external code
+            from modal_functions.sd_inference_complete import CompleteTransformationPipeline
 
-            # Call the method directly - Modal handles the spawning
-            call = pipeline_cls().process_transformation_complete.remote(
+            # Call the remote method
+            call = CompleteTransformationPipeline().process_transformation_complete.remote(
                 job_id=job_id,
                 image_url=image_url,
                 style=style,

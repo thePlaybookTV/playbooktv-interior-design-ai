@@ -7,7 +7,7 @@ Author: Modomo Team
 Date: November 2025
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -214,8 +214,8 @@ async def health_check():
 @app.post("/transform/submit", response_model=TransformSubmitResponse)
 async def submit_transformation(
     file: UploadFile = File(...),
-    style: str = "modern",
-    preferences: Optional[str] = None  # JSON string
+    style: str = Form("modern"),
+    preferences: Optional[str] = Form(None)  # JSON string
 ):
     """
     Submit new transformation job

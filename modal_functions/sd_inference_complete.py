@@ -160,7 +160,8 @@ def upload_to_r2(image_bytes: bytes, key: str, r2_config: dict) -> str:
     image=image,
     timeout=120,  # 2 minutes max
     scaledown_window=300,  # Keep warm for 5 minutes (renamed from container_idle_timeout)
-    retries=2
+    retries=2,
+    secrets=[modal.Secret.from_name("modomo-r2-credentials")]
 )
 class CompleteTransformationPipeline:
     """

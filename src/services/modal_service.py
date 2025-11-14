@@ -11,6 +11,7 @@ import os
 import modal
 import logging
 from typing import Dict, Optional
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()

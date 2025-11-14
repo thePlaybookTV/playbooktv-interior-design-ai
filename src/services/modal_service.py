@@ -107,24 +107,45 @@ class ModalService:
         logger.info(f"Submitting job {job_id} to Modal...")
 
         try:
-            # Ensure Modal credentials are set
-            os.environ["MODAL_TOKEN_ID"] = self.token_id
-            os.environ["MODAL_TOKEN_SECRET"] = self.token_secret
+            # For calling deployed Modal functions, we need to use the SDK's remote execution
+            # We can't import the class directly - it needs to be hydrated from the deployed app
 
-            # Import the deployed function
-            from modal_functions.sd_inference_complete import CompleteTransformationPipeline
+            # Create a reference to the deployed function using Modal's SDK
+            # The function name is "CompleteTransformationPipeline.process_transformation_complete"
+            import modal
 
-            # Call spawn() for async execution - returns immediately
-            # Modal handles authentication and execution on their infrastructure
-            pipeline = CompleteTransformationPipeline()
-            call = pipeline.process_transformation_complete.spawn(
-                job_id=job_id,
-                image_url=image_url,
-                style=style,
-                room_type=room_type,
-                preferences=preferences or {},
-                redis_url=redis_url or os.getenv("REDIS_URL")
-            )
+            # Lookup the deployed app
+            deployed_app = modal.App.lookup(self.app_name, create_if_missing=False)
+
+            # Access the deployed class method directly through the app
+            # Modal apps expose classes as attributes when looked up
+            try:
+                # Try to access via the app's namespace
+                TransformPipeline = deployed_app["CompleteTransformationPipeline"]
+
+                # Call the method
+                call = TransformPipeline.process_transformation_complete.remote(
+                    job_id=job_id,
+                    image_url=image_url,
+                    style=style,
+                    room_type=room_type,
+                    preferences=preferences or {},
+                    redis_url=redis_url or os.getenv("REDIS_URL")
+                )
+            except (KeyError, TypeError):
+                # Fallback: try accessing as an attribute
+                TransformPipeline = getattr(deployed_app, "CompleteTransformationPipeline", None)
+                if not TransformPipeline:
+                    raise Exception("Could not find CompleteTransformationPipeline in deployed app")
+
+                call = TransformPipeline.process_transformation_complete.remote(
+                    job_id=job_id,
+                    image_url=image_url,
+                    style=style,
+                    room_type=room_type,
+                    preferences=preferences or {},
+                    redis_url=redis_url or os.getenv("REDIS_URL")
+                )
 
             # Get call ID for tracking
             modal_call_id = call.object_id

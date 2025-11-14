@@ -119,28 +119,39 @@ async def startup():
         services["job_queue"] = JobQueue()
         logger.info("✅ Job queue initialized")
 
-        # Initialize storage (R2)
-        services["storage"] = StorageService()
-        logger.info("✅ Storage service initialized")
+        # Initialize storage (R2) - allow to fail gracefully
+        try:
+            services["storage"] = StorageService()
+            logger.info("✅ Storage service initialized")
+        except Exception as e:
+            logger.warning(f"⚠️ Storage service failed to initialize: {e}")
+            logger.warning("   Set R2 environment variables in Railway dashboard")
+            services["storage"] = None
 
-        # Initialize Modal service
-        services["modal"] = get_modal_service()
-        logger.info("✅ Modal service initialized")
+        # Initialize Modal service - allow to fail gracefully
+        try:
+            services["modal"] = get_modal_service()
+            logger.info("✅ Modal service initialized")
+
+            # Check Modal deployment
+            if not services["modal"].is_deployed():
+                logger.warning("⚠️ Modal app not deployed!")
+                logger.warning("   Deploy with: modal deploy modal_functions/sd_inference_complete.py")
+        except Exception as e:
+            logger.warning(f"⚠️ Modal service failed to initialize: {e}")
+            logger.warning("   Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in Railway dashboard")
+            services["modal"] = None
 
         # Initialize WebSocket manager
         services["websocket"] = get_websocket_manager()
         logger.info("✅ WebSocket manager initialized")
 
-        # Check Modal deployment
-        if not services["modal"].is_deployed():
-            logger.warning("⚠️ Modal app not deployed!")
-            logger.warning("   Deploy with: modal deploy modal_functions/sd_inference_complete.py")
-
-        logger.info("✨ All services initialized successfully")
+        logger.info("✨ Service initialization complete")
 
     except Exception as e:
-        logger.error(f"❌ Failed to initialize services: {e}")
-        raise
+        logger.error(f"❌ Failed to initialize core services: {e}")
+        logger.error("   Application will start but may not be fully functional")
+        # Don't raise - allow app to start for debugging
 
 @app.on_event("shutdown")
 async def shutdown():

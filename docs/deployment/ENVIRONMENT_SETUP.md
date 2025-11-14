@@ -21,26 +21,29 @@ Copy the values from your `.env` or `solar.env` file and add them to Railway:
 
 ### **Redis Configuration**
 ```bash
-REDIS_URL=redis://default:CiFsKXyXMUqdtPVvAiuwiFtYWAZtRchY@metro.proxy.rlwy.net:25118
+REDIS_URL=redis://default:YOUR_REDIS_PASSWORD@YOUR_REDIS_HOST:PORT
 ```
+**Note:** Get this from Railway → Redis service → Connect tab
 
 ### **Cloudflare R2 Storage**
 ```bash
-R2_BUCKET_NAME=reroom
-R2_ENDPOINT_URL=https://9bbdb3861142e65685d23f4955b88ebe.r2.cloudflarestorage.com
-R2_ACCESS_KEY_ID=6c8abdff2cdad89323e36b258b1d0f4b
-R2_SECRET_ACCESS_KEY=2a2bb806281b1b321803f91cbe8fbc4180536cd87cf745ad4fef368011c3a1d1
-CDN_DOMAIN=9bbdb3861142e65685d23f4955b88ebe.r2.cloudflarestorage.com
-CLOUDFLARE_ACCOUNT_ID=9bbdb3861142e65685d23f4955b88ebe
+R2_BUCKET_NAME=your-bucket-name
+R2_ENDPOINT_URL=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=your_r2_access_key_id
+R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
+CDN_DOMAIN=YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id
 ```
+**Note:** Get R2 credentials from Cloudflare dashboard → R2 → Manage R2 API Tokens
 
 ### **Modal GPU Configuration**
 ```bash
-MODAL_TOKEN_ID=ak-mdhwVsEGW46OtIdFT7j0FH
-MODAL_TOKEN_SECRET=as-lf9wqUIlMhi65hrgiWsd8q
+MODAL_TOKEN_ID=ak-YOUR_MODAL_TOKEN_ID
+MODAL_TOKEN_SECRET=as-YOUR_MODAL_TOKEN_SECRET
 MODAL_APP_NAME=modomo-sd-inference
 MODAL_STUB_NAME=modomo-sd-inference
 ```
+**Note:** Get Modal tokens from https://modal.com/settings → Tokens
 
 ### **API Configuration**
 ```bash
@@ -92,28 +95,30 @@ curl https://playbooktv-interior-design-ai-production.up.railway.app/health
 
 ---
 
-## 🔧 **Quick Copy-Paste Format for Railway**
+## 🔧 **Quick Copy-Paste Template for Railway**
 
-If Railway has a bulk import feature, use this format:
+If Railway has a bulk import feature, use this format (replace with your actual values):
 
 ```
-REDIS_URL=redis://default:CiFsKXyXMUqdtPVvAiuwiFtYWAZtRchY@metro.proxy.rlwy.net:25118
-R2_BUCKET_NAME=reroom
-R2_ENDPOINT_URL=https://9bbdb3861142e65685d23f4955b88ebe.r2.cloudflarestorage.com
-R2_ACCESS_KEY_ID=6c8abdff2cdad89323e36b258b1d0f4b
-R2_SECRET_ACCESS_KEY=2a2bb806281b1b321803f91cbe8fbc4180536cd87cf745ad4fef368011c3a1d1
-CDN_DOMAIN=9bbdb3861142e65685d23f4955b88ebe.r2.cloudflarestorage.com
-CLOUDFLARE_ACCOUNT_ID=9bbdb3861142e65685d23f4955b88ebe
-MODAL_TOKEN_ID=ak-mdhwVsEGW46OtIdFT7j0FH
-MODAL_TOKEN_SECRET=as-lf9wqUIlMhi65hrgiWsd8q
+REDIS_URL=redis://default:YOUR_REDIS_PASSWORD@YOUR_REDIS_HOST:PORT
+R2_BUCKET_NAME=your-bucket-name
+R2_ENDPOINT_URL=https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=your_r2_access_key_id
+R2_SECRET_ACCESS_KEY=your_r2_secret_access_key
+CDN_DOMAIN=YOUR_ACCOUNT_ID.r2.cloudflarestorage.com
+CLOUDFLARE_ACCOUNT_ID=your_cloudflare_account_id
+MODAL_TOKEN_ID=ak-YOUR_MODAL_TOKEN_ID
+MODAL_TOKEN_SECRET=as-YOUR_MODAL_TOKEN_SECRET
 MODAL_APP_NAME=modomo-sd-inference
 MODAL_STUB_NAME=modomo-sd-inference
 API_HOST=0.0.0.0
 API_PORT=8000
 API_SECRET_KEY=change-this-to-a-secure-random-key-in-production
-API_BASE_URL=https://playbooktv-interior-design-ai-production.up.railway.app
+API_BASE_URL=https://your-app-name.up.railway.app
 ENVIRONMENT=production
 ```
+
+**SECURITY NOTE:** Copy your actual credentials from your local `.env` or `solar.env` file. Never commit credentials to git!
 
 ---
 

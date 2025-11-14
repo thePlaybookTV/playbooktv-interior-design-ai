@@ -88,10 +88,10 @@ playbooktv-interior-design-ai/
 │   └── best_interior_model.pth
 │
 ├── docs/                      # Documentation
-│   ├── API.md
-│   ├── DEPLOYMENT.md
-│   ├── PRODUCTION_HANDOVER.md
-│   └── PHASE2_GUIDE.md        # Phase 2 training guide
+│   ├── deployment/           # Deployment guides
+│   ├── training/              # Training guides
+│   ├── api/                   # API documentation
+│   └── status/                # System status reports
 │
 ├── scripts/                   # Executable scripts
 │   └── run_phase2_training.py # Phase 2 training pipeline
@@ -109,121 +109,93 @@ playbooktv-interior-design-ai/
 
 ##  Quick Start
 
-### Prerequisites
-- Python 3.8+
-- CUDA-capable GPU (recommended)
-- 16GB+ RAM
-- 50GB+ storage
+### Option 1: Use the Production API (Recommended)
 
-### Installation
+The API is already deployed and operational:
+
 ```bash
-# Clone the repository
-git clone https://github.com/thePlaybookTV/playbooktv-interior-design-ai.git
-cd playbooktv-interior-design-ai
+# Test health endpoint
+curl https://playbooktv-interior-design-ai-production.up.railway.app/health
 
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your API keys
+# Transform an image
+curl -X POST https://playbooktv-interior-design-ai-production.up.railway.app/transform/submit \
+  -F "file=@your-room-image.jpg" \
+  -F "style=modern"
 ```
 
-### Required API Keys
+**See:** [docs/deployment/README.md](docs/deployment/README.md) for complete API documentation
 
-Create a `.env` file with:
-```env
-# Data Source APIs
-HUGGINGFACE_TOKEN=your_token_here
-KAGGLE_USERNAME=your_username
-KAGGLE_KEY=your_key
-ROBOFLOW_API_KEY=your_key
-UNSPLASH_ACCESS_KEY=your_key
-PEXELS_API_KEY=your_key
+### Option 2: Deploy Your Own
 
-# AWS (Optional)
-AWS_ACCESS_KEY_ID=your_key
-AWS_SECRET_ACCESS_KEY=your_secret
+```bash
+# 1. Push to GitHub
+git push origin main
+
+# 2. Deploy to Railway (https://railway.app/new)
+# 3. Deploy to Modal
+modal deploy modal_functions/sd_inference_complete.py
 ```
+
+**See:** [docs/deployment/QUICKSTART.md](docs/deployment/QUICKSTART.md) for 3-step deployment
+
+### Option 3: Train Phase 2 Models
+
+Upgrade from 14 → 294 object categories and improve style classification:
+
+```bash
+python scripts/run_phase2_training.py \
+    --db database_metadata.duckdb \
+    --output ./phase2_outputs
+```
+
+**See:** [docs/training/QUICKSTART.md](docs/training/QUICKSTART.md) for training guide
 
 ## 📖 Usage
 
-### 1. Data Collection
-```python
-from src.data_collection.hybrid_collector import HybridCollector, HybridConfig
+### Production API Endpoints
 
-# Configure collection
-config = HybridConfig()
-config.huggingface_target = 4000
-config.kaggle_target = 4000
+The deployed API supports:
 
-# Run collection
-collector = HybridCollector(config)
-total_images = collector.collect_all()
-```
-
-### 2. Image Processing
-```python
-from src.processing.batch_processor import BatchProcessor
-
-# Process images
-processor = BatchProcessor(db_path="./data/metadata.duckdb")
-processor.process_all_in_batches(batch_size=64)
-```
-
-### 3. Object Detection (Phase 1)
-```python
-from src.models.pristine_detector import PristineDetector
-
-# Initialize detector
-detector = PristineDetector()
-
-# Detect objects (14 COCO classes)
-results = detector.detect_with_masks("path/to/image.jpg")
-```
-
-### 4. Phase 2 Training (NEW!)
-
-**Complete Pipeline:**
+**Transform Image:**
 ```bash
-# Run full Phase 2 training (YOLO + Style Classification)
-python scripts/run_phase2_training.py \
-    --db ./interior_design_data_hybrid/processed/metadata.duckdb \
-    --output ./phase2_outputs \
-    --yolo-epochs 100 \
-    --style-epochs 30 \
-    --batch-size 16
+POST /transform/submit
+Content-Type: multipart/form-data
+
+Parameters:
+- file: image file (JPEG/PNG)
+- style: "modern" | "scandinavian" | "boho" | "industrial" | "minimalist"
+
+Returns: job_id, estimated_time, status_url, websocket_url
 ```
 
-**YOLO Fine-tuning Only:**
+**Check Status:**
 ```bash
-# Fine-tune YOLO on 294 categories
-python scripts/run_phase2_training.py \
-    --skip-style \
-    --yolo-epochs 100
+GET /transform/status/{job_id}
+
+Returns: status, progress, result_url
 ```
 
-**Style Classification Only:**
+**Real-time Updates:**
 ```bash
-# Train improved style classifier
+WS /ws/transform/{job_id}
+
+Streams: progress updates in real-time
+```
+
+**See:** [docs/deployment/README.md#api-endpoints](docs/deployment/README.md#api-endpoints) for complete API reference
+
+### Phase 2 Training
+
+Upgrade your models with Phase 2:
+
+```bash
+# Run complete Phase 2 training
 python scripts/run_phase2_training.py \
-    --skip-yolo \
-    --style-epochs 30
+    --db database_metadata.duckdb \
+    --output ./phase2_outputs
 ```
 
-**For detailed instructions, see [Phase 2 Guide](docs/PHASE2_GUIDE.md)**
-
-### 5. Training Classification Models (Phase 1)
-```python
-from src.models.training import train_model
-
-# Train room & style classifier
-history, model = train_model(
-    db_path="./data/metadata.duckdb",
-    num_epochs=15,
-    batch_size=16
-)
-```
+**See:** [docs/training/QUICKSTART.md](docs/training/QUICKSTART.md) for detailed training instructions
 
 ## 🗄️ Database Schema
 
@@ -300,13 +272,28 @@ The taxonomy includes **294 specific furniture types** organized as:
 - mid_century_modern
 - rustic
 
-##  Testing
-```bash
-# Run all tests
-pytest tests/
+##  Documentation
 
-# Run specific test
-pytest tests/test_data_collection.py
+### Quick Links
+- **[GETTING_STARTED.md](GETTING_STARTED.md)** - Start here!
+- **[docs/deployment/README.md](docs/deployment/README.md)** - Complete deployment guide
+- **[docs/training/QUICKSTART.md](docs/training/QUICKSTART.md)** - Phase 2 training
+- **[docs/status/PRODUCTION_STATUS.md](docs/status/PRODUCTION_STATUS.md)** - Current system status
+
+### Documentation Structure
+```
+docs/
+├── deployment/          # Deployment guides
+│   ├── README.md       # Complete deployment guide
+│   ├── QUICKSTART.md   # 3-step deployment
+│   ├── ARCHITECTURE.md # System architecture
+│   └── ENVIRONMENT_SETUP.md # Environment variables
+├── training/           # Training guides
+│   ├── QUICKSTART.md   # Quick start
+│   └── PHASE2_TRAINING_GUIDE.md # Comprehensive guide
+├── api/                # API documentation
+├── status/             # System status reports
+└── archive/            # Archived/legacy docs
 ```
 
 ##  Performance Optimization

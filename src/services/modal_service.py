@@ -107,6 +107,10 @@ class ModalService:
         logger.info(f"Submitting job {job_id} to Modal...")
 
         try:
+            # Ensure Modal credentials are in environment
+            os.environ["MODAL_TOKEN_ID"] = self.token_id
+            os.environ["MODAL_TOKEN_SECRET"] = self.token_secret
+
             # Import and use the deployed app with context
             from modal_functions.sd_inference_complete import app as deployed_app, CompleteTransformationPipeline
 

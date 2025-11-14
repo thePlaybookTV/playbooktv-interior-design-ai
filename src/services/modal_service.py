@@ -107,45 +107,41 @@ class ModalService:
         logger.info(f"Submitting job {job_id} to Modal...")
 
         try:
-            # For calling deployed Modal functions, we need to use the SDK's remote execution
-            # We can't import the class directly - it needs to be hydrated from the deployed app
-
-            # Create a reference to the deployed function using Modal's SDK
-            # The function name is "CompleteTransformationPipeline.process_transformation_complete"
+            # Import modal here to ensure it uses the credentials we set
             import modal
 
-            # Lookup the deployed app
-            deployed_app = modal.App.lookup(self.app_name, create_if_missing=False)
+            # Set Modal credentials explicitly
+            os.environ["MODAL_TOKEN_ID"] = self.token_id
+            os.environ["MODAL_TOKEN_SECRET"] = self.token_secret
 
-            # Access the deployed class method directly through the app
-            # Modal apps expose classes as attributes when looked up
-            try:
-                # Try to access via the app's namespace
-                TransformPipeline = deployed_app["CompleteTransformationPipeline"]
+            # For Modal SDK 0.57+, we need to import the module and let Modal handle the rest
+            # Import the modal_functions module
+            import sys
+            import importlib.util
 
-                # Call the method
-                call = TransformPipeline.process_transformation_complete.remote(
-                    job_id=job_id,
-                    image_url=image_url,
-                    style=style,
-                    room_type=room_type,
-                    preferences=preferences or {},
-                    redis_url=redis_url or os.getenv("REDIS_URL")
-                )
-            except (KeyError, TypeError):
-                # Fallback: try accessing as an attribute
-                TransformPipeline = getattr(deployed_app, "CompleteTransformationPipeline", None)
-                if not TransformPipeline:
-                    raise Exception("Could not find CompleteTransformationPipeline in deployed app")
+            # Load the Modal app module
+            spec = importlib.util.spec_from_file_location(
+                "sd_inference_complete",
+                str(Path(__file__).parent.parent.parent / "modal_functions" / "sd_inference_complete.py")
+            )
+            modal_module = importlib.util.module_from_spec(spec)
+            sys.modules["sd_inference_complete"] = modal_module
+            spec.loader.exec_module(modal_module)
 
-                call = TransformPipeline.process_transformation_complete.remote(
-                    job_id=job_id,
-                    image_url=image_url,
-                    style=style,
-                    room_type=room_type,
-                    preferences=preferences or {},
-                    redis_url=redis_url or os.getenv("REDIS_URL")
-                )
+            # Get the class from the loaded module
+            CompleteTransformationPipeline = modal_module.CompleteTransformationPipeline
+
+            # Create an instance and call spawn
+            # spawn() returns a function call handle immediately without waiting
+            pipeline = CompleteTransformationPipeline()
+            call = pipeline.process_transformation_complete.spawn(
+                job_id=job_id,
+                image_url=image_url,
+                style=style,
+                room_type=room_type,
+                preferences=preferences or {},
+                redis_url=redis_url or os.getenv("REDIS_URL")
+            )
 
             # Get call ID for tracking
             modal_call_id = call.object_id

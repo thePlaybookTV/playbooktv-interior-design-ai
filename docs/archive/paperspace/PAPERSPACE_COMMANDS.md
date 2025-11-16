@@ -61,6 +61,8 @@ EOF
 
 **Once the test above shows images being copied:**
 
+> ℹ️ `start_training.sh` now checks `nvidia-smi` and installs the PyTorch wheel that matches your CUDA runtime (12.4 vs 12.1). If no GPU driver is available it automatically falls back to CPU builds, so you no longer need to tweak the script manually.
+
 ```bash
 cd /notebooks/app
 

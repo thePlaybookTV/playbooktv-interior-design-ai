@@ -55,14 +55,31 @@ if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
 
     # Check if we're on Paperspace (has /datasets directory)
     if [ -d "/datasets" ]; then
-        echo -e "${BLUE}Detected Paperspace environment - using CUDA 12.1 compatible packages${NC}"
+        echo -e "${BLUE}Detected Paperspace environment - selecting PyTorch build based on CUDA version${NC}"
 
-        # Install PyTorch from CUDA index
-        echo -e "${BLUE}Installing PyTorch 2.4.1 with CUDA 12.1...${NC}"
-        pip install -q --index-url https://download.pytorch.org/whl/cu121 torch==2.4.1 torchvision==0.19.1
+        CUDA_VERSION=""
+        if command -v nvidia-smi &> /dev/null; then
+            CUDA_VERSION=$(nvidia-smi | grep -m1 -o "CUDA Version: [0-9.]*" | awk '{print $3}')
+        fi
+
+        TORCH_INDEX=""
+        TORCH_PACKAGES="torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1"
+
+        if [[ "$CUDA_VERSION" == 12.4* ]]; then
+            TORCH_INDEX="https://download.pytorch.org/whl/cu124"
+            echo -e "${BLUE}CUDA ${CUDA_VERSION} detected - installing PyTorch CUDA 12.4 wheels${NC}"
+        elif [[ "$CUDA_VERSION" == 12.1* ]]; then
+            TORCH_INDEX="https://download.pytorch.org/whl/cu121"
+            echo -e "${BLUE}CUDA ${CUDA_VERSION} detected - installing PyTorch CUDA 12.1 wheels${NC}"
+        else
+            TORCH_INDEX="https://download.pytorch.org/whl/cpu"
+            echo -e "${YELLOW}Unknown CUDA version (${CUDA_VERSION:-unavailable}) - falling back to CPU wheels${NC}"
+        }
+
+        pip install -q --index-url "$TORCH_INDEX" $TORCH_PACKAGES
 
         # Install other dependencies from regular PyPI
-        echo -e "${BLUE}Installing other dependencies...${NC}"
+        echo -e "${BLUE}Installing remaining dependencies...${NC}"
         pip install -q ultralytics==8.0.0 "numpy<2" pillow python-dotenv duckdb pandas tqdm
     else
         pip install -q -r requirements.txt

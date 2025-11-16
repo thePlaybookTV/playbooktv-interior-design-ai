@@ -9,7 +9,7 @@ torchvision==0.19.1
 # Other dependencies
 ultralytics==8.0.0
 numpy<2
-pillow==10.1.0
+pillow>=10.2.0
 python-dotenv==1.0.0
 duckdb==0.9.2
 pandas==2.0.3

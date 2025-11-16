@@ -52,7 +52,15 @@ done
 if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
     echo ""
     echo -e "${YELLOW}⚠️  Missing packages detected. Installing...${NC}"
-    pip install -q -r requirements.txt
+
+    # Check if we're on Paperspace (has /datasets directory)
+    if [ -d "/datasets" ]; then
+        echo -e "${BLUE}Detected Paperspace environment - using CUDA 12.1 compatible packages${NC}"
+        pip install --index-url https://download.pytorch.org/whl/cu121 -r requirements.paperspace.txt
+    else
+        pip install -q -r requirements.txt
+    fi
+
     echo -e "${GREEN}✓${NC} Dependencies installed"
 fi
 

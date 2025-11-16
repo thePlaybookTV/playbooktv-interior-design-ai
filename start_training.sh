@@ -56,7 +56,14 @@ if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
     # Check if we're on Paperspace (has /datasets directory)
     if [ -d "/datasets" ]; then
         echo -e "${BLUE}Detected Paperspace environment - using CUDA 12.1 compatible packages${NC}"
-        pip install --index-url https://download.pytorch.org/whl/cu121 -r requirements.paperspace.txt
+
+        # Install PyTorch from CUDA index
+        echo -e "${BLUE}Installing PyTorch 2.4.1 with CUDA 12.1...${NC}"
+        pip install -q --index-url https://download.pytorch.org/whl/cu121 torch==2.4.1 torchvision==0.19.1
+
+        # Install other dependencies from regular PyPI
+        echo -e "${BLUE}Installing other dependencies...${NC}"
+        pip install -q ultralytics==8.0.0 "numpy<2" pillow python-dotenv duckdb pandas tqdm
     else
         pip install -q -r requirements.txt
     fi

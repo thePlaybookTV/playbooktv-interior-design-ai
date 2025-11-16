@@ -1,25 +1,20 @@
 # Paperspace-specific requirements
 # CUDA 12.1 compatible versions for Paperspace Gradient base images
 
-# PyTorch with CUDA 12.1 support
-# Install with: pip install --index-url https://download.pytorch.org/whl/cu121 -r requirements.paperspace.txt
+# INSTALL INSTRUCTIONS:
+# Step 1: Install PyTorch with CUDA 12.1
+#   pip install --index-url https://download.pytorch.org/whl/cu121 torch==2.4.1 torchvision==0.19.1
+# Step 2: Install other dependencies from regular PyPI
+#   pip install ultralytics==8.0.0 "numpy<2" pillow python-dotenv duckdb pandas tqdm
+
+# PyTorch versions (install from CUDA index)
 torch==2.4.1
 torchvision==0.19.1
 
-# Other dependencies
+# Other dependencies (install from regular PyPI)
 ultralytics==8.0.0
-numpy<2
-pillow>=10.2.0
-python-dotenv==1.0.0
-duckdb==0.9.2
-pandas==2.0.3
-tqdm==4.66.1
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-multipart==0.0.6
-pydantic==2.5.0
-
-# Training-specific
-transformers>=4.30.0
-diffusers>=0.27.0
-accelerate>=0.20.0
+pillow
+python-dotenv
+duckdb
+pandas
+tqdm

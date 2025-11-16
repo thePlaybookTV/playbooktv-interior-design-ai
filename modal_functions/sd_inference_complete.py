@@ -60,6 +60,8 @@ image = (
         "from diffusers import StableDiffusionPipeline, ControlNetModel; "
         "ControlNetModel.from_pretrained(\"lllyasviel/control_v11f1p_sd15_depth\"); "
         "ControlNetModel.from_pretrained(\"lllyasviel/control_v11p_sd15_canny\"); "
+        "ControlNetModel.from_pretrained(\"BertChristiaens/controlnet-seg-room\"); "
+        "ControlNetModel.from_pretrained(\"lllyasviel/control_v11p_sd15_mlsd\"); "
         "StableDiffusionPipeline.from_pretrained(\"runwayml/stable-diffusion-v1-5\")"
         "'"
     )
@@ -152,8 +154,19 @@ def upload_to_r2(image_bytes: bytes, key: str, r2_config: dict) -> str:
 
 
 # ============================================================================
+# ENSEMBLE STYLE CLASSIFIER MODELS
+# Note: Classes are defined here but only instantiated inside Modal where torch is available
+# ============================================================================
+
+# Placeholder - actual classes will be created at runtime in the Modal function
+
+
+# ============================================================================
 # MAIN PROCESSING CLASS
 # ============================================================================
+
+# Create Modal Volume for custom model storage
+model_volume = modal.Volume.from_name("modomo-models", create_if_missing=True)
 
 @app.cls(
     gpu="T4",  # NVIDIA T4 GPU (£0.30/hour)
@@ -161,7 +174,8 @@ def upload_to_r2(image_bytes: bytes, key: str, r2_config: dict) -> str:
     timeout=120,  # 2 minutes max
     scaledown_window=300,  # Keep warm for 5 minutes (renamed from container_idle_timeout)
     retries=2,
-    secrets=[modal.Secret.from_name("modomo-r2-credentials")]
+    secrets=[modal.Secret.from_name("modomo-r2-credentials")],
+    volumes={"/models": model_volume}  # Mount volume for custom models
 )
 class CompleteTransformationPipeline:
     """
@@ -177,6 +191,7 @@ class CompleteTransformationPipeline:
         from transformers import pipeline
         from diffusers import StableDiffusionControlNetPipeline, ControlNetModel, DPMSolverMultistepScheduler
         from ultralytics import YOLO
+        from .quality_validator import QualityValidator
 
         logger.info("🚀 Loading models on Modal GPU...")
 
@@ -191,11 +206,17 @@ class CompleteTransformationPipeline:
             device=0 if self.device == "cuda" else -1
         )
 
-        # 2. Load YOLO
+        # 2. Load YOLO (custom if available, fallback to generic)
         logger.info("Loading YOLO...")
-        self.yolo = YOLO("yolov8n.pt")  # Will auto-download
+        import os
+        if os.path.exists("/models/yolo/v1/best.pt"):
+            self.yolo = YOLO("/models/yolo/v1/best.pt")
+            logger.info("✓ Loaded fine-tuned YOLO with 294 interior categories")
+        else:
+            logger.warning("⚠️ Custom YOLO not found at /models/yolo/v1/best.pt, using generic yolov8n.pt")
+            self.yolo = YOLO("yolov8n.pt")  # Fallback to generic
 
-        # 3. Load ControlNet models
+        # 3. Load ControlNet models (generic + interior-specific)
         logger.info("Loading ControlNet models...")
         self.controlnet_depth = ControlNetModel.from_pretrained(
             "lllyasviel/control_v11f1p_sd15_depth",
@@ -205,6 +226,17 @@ class CompleteTransformationPipeline:
             "lllyasviel/control_v11p_sd15_canny",
             torch_dtype=torch.float16
         )
+
+        # Load interior-specific ControlNets
+        self.controlnet_seg_room = ControlNetModel.from_pretrained(
+            "BertChristiaens/controlnet-seg-room",
+            torch_dtype=torch.float16
+        )
+        self.controlnet_mlsd = ControlNetModel.from_pretrained(
+            "lllyasviel/control_v11p_sd15_mlsd",
+            torch_dtype=torch.float16
+        )
+        logger.info("✓ Loaded 4 ControlNet models (depth, canny, seg-room, M-LSD)")
 
         # 4. Load SD 1.5 pipeline
         logger.info("Loading SD 1.5 pipeline...")
@@ -227,6 +259,21 @@ class CompleteTransformationPipeline:
         # Enable optimizations
         self.sd_pipe.enable_model_cpu_offload()
         self.sd_pipe.enable_attention_slicing()
+
+        # 5. Ensemble Style Classifier placeholder (will be loaded from volume when available)
+        logger.info("Checking for ensemble style classifier...")
+        if os.path.exists("/models/ensemble/v1/efficientnet.pth"):
+            logger.info("✓ Custom ensemble models found - will load on demand")
+            self.has_ensemble = True
+        else:
+            logger.warning("⚠️ Ensemble classifier not found at /models/ensemble/v1/, using basic style prompts only")
+            self.has_ensemble = False
+        self.style_classifier = None  # Will be loaded on-demand if needed
+
+        # 6. Initialize Quality Validator
+        logger.info("Initializing quality validator...")
+        self.quality_validator = QualityValidator(min_score=0.75)
+        logger.info("✓ Quality validator ready")
 
         logger.info("✅ All models loaded successfully!")
 
@@ -321,8 +368,12 @@ class CompleteTransformationPipeline:
 
             logger.info(f"Prompt: {prompt[:100]}...")
 
-            # Step 5: Run SD 1.5 + ControlNet
+            # Step 5: Run SD 1.5 + ControlNet with dynamic conditioning scales
             update_redis_progress(redis_url, job_id, "transforming", 0.6, "Running AI transformation...")
+
+            # Get dynamic conditioning scales based on room type
+            conditioning_scales = self._get_controlnet_scales(room_type or "living_room")
+            logger.info(f"Using conditioning scales {conditioning_scales} for {room_type}")
 
             generator = torch.Generator(device=self.device).manual_seed(42)
 
@@ -332,22 +383,73 @@ class CompleteTransformationPipeline:
                 image=[depth_image, canny_image],
                 num_inference_steps=20,  # Good quality, fast
                 guidance_scale=7.5,
-                controlnet_conditioning_scale=[0.8, 0.6],  # Depth stronger
+                controlnet_conditioning_scale=conditioning_scales,  # Dynamic based on room type
                 generator=generator
             )
 
             result_image = output.images[0]
             logger.info("✓ SD transformation complete")
 
-            # Step 6: Quality validation (simple check)
+            # Step 6: Quality validation with retry logic
+            update_redis_progress(redis_url, job_id, "finalizing", 0.85, "Validating quality...")
+
+            validation_result = self.quality_validator.validate_result(
+                generated_image=result_image,
+                original_image=image,
+                style=style
+            )
+
+            logger.info(f"Quality score: {validation_result['score']:.2f} - {validation_result['reason']}")
+
+            # Retry once if quality is below threshold
+            retry_count = 0
+            max_retries = 1
+
+            while validation_result['retry_recommended'] and retry_count < max_retries:
+                retry_count += 1
+                logger.warning(f"Quality below threshold ({validation_result['score']:.2f}), retrying... (attempt {retry_count}/{max_retries})")
+                update_redis_progress(redis_url, job_id, "transforming", 0.7, f"Improving quality (retry {retry_count})...")
+
+                # Get suggested parameter adjustments
+                current_params = {
+                    'prompt': prompt,
+                    'negative_prompt': negative_prompt,
+                    'image': [depth_image, canny_image],
+                    'num_inference_steps': 20,
+                    'guidance_scale': 7.5,
+                    'controlnet_conditioning_scale': conditioning_scales,
+                    'generator': generator,
+                    'seed': 42
+                }
+
+                new_params = self.quality_validator.suggest_retry_params(
+                    validation_result=validation_result,
+                    current_params=current_params
+                )
+
+                # Update generator with new seed if changed
+                if 'seed' in new_params and new_params['seed'] != 42:
+                    new_params['generator'] = torch.Generator(device=self.device).manual_seed(new_params['seed'])
+                    del new_params['seed']
+
+                # Retry with adjusted parameters
+                output = self.sd_pipe(**new_params)
+                result_image = output.images[0]
+
+                # Validate again
+                validation_result = self.quality_validator.validate_result(
+                    generated_image=result_image,
+                    original_image=image,
+                    style=style
+                )
+                logger.info(f"Retry quality score: {validation_result['score']:.2f} - {validation_result['reason']}")
+
+            if not validation_result['passed']:
+                logger.warning(f"Final quality score {validation_result['score']:.2f} below threshold, but proceeding (max retries reached)")
+            else:
+                logger.info(f"✓ Quality validation passed with score {validation_result['score']:.2f}")
+
             update_redis_progress(redis_url, job_id, "finalizing", 0.9, "Finalizing your design...")
-
-            # Check if image is not blank
-            result_np = np.array(result_image)
-            if result_np.std() < 10:
-                raise Exception("Generated image has insufficient detail")
-
-            logger.info("✓ Quality check passed")
 
             # Step 7: Upload results to R2
             update_redis_progress(redis_url, job_id, "finalizing", 0.95, "Uploading results...")
@@ -426,32 +528,60 @@ class CompleteTransformationPipeline:
             raise
 
     def _get_style_prompt(self, style: str, room_type: str) -> str:
-        """Generate style-specific prompt"""
+        """Generate enhanced style-specific prompt with materials, colors, and details"""
         style_prompts = {
             'modern': (
-                f"modern minimalist {room_type}, clean lines, neutral colors, "
+                f"modern minimalist {room_type}, clean lines, neutral palette, "
                 "contemporary furniture, uncluttered space, sleek design, "
-                "professional interior photography, high quality, 8k"
+                "materials: polished concrete, steel, glass, smooth surfaces, "
+                "colors: white, charcoal gray, black accents, occasional bold color, "
+                "lighting: recessed LED, natural light, "
+                "professional interior photography, high quality, 8k, sharp focus"
             ),
             'scandinavian': (
-                f"Scandinavian {room_type}, light wood furniture, white walls, "
-                "hygge atmosphere, cozy minimalist, natural textiles, "
-                "soft lighting, Nordic design, professional photography"
+                f"Scandinavian {room_type}, light oak furniture, white painted walls, "
+                "hygge cozy atmosphere, minimalist Nordic design, natural textiles, "
+                "materials: light wood, natural linen, wool, white paint, brass fixtures, "
+                "colors: white, light gray, soft pastels, natural wood tones, "
+                "lighting: soft diffused natural light, candles, warm ambiance, "
+                "potted green plants, simple decor, "
+                "professional interior photography, 8k, warm tones"
             ),
             'boho': (
-                f"bohemian {room_type}, eclectic mix, warm textures, "
-                "plants, vintage furniture, colorful textiles, "
-                "relaxed atmosphere, artistic, professional photography"
+                f"bohemian {room_type}, eclectic mix, rich warm textures, "
+                "vintage furniture, layered textiles, abundant plants, "
+                "materials: rattan, woven textiles, vintage wood, brass, macrame, "
+                "colors: earth tones, terracotta, mustard yellow, deep reds, jewel tones, "
+                "lighting: warm golden light, string lights, natural sunlight, "
+                "decorative pillows, patterned rugs, artistic wall hangings, "
+                "relaxed creative atmosphere, professional photography, 8k"
             ),
             'industrial': (
-                f"industrial {room_type}, exposed brick, metal fixtures, "
-                "raw materials, urban loft style, concrete, steel beams, "
-                "modern rustic, professional interior photography"
+                f"industrial {room_type}, exposed elements, raw urban aesthetic, "
+                "loft style, metal fixtures, reclaimed materials, "
+                "materials: exposed brick, weathered steel, concrete, reclaimed wood, iron pipes, "
+                "colors: charcoal, rust, raw steel gray, black, weathered wood brown, "
+                "lighting: Edison bulbs, metal pendant lights, track lighting, "
+                "open ductwork, minimal decoration, urban edge, "
+                "professional interior photography, 8k, dramatic lighting"
             ),
             'minimalist': (
-                f"minimalist {room_type}, extremely clean, simple furniture, "
-                "white and black, uncluttered, zen-like, modern, "
-                "professional photography, high quality"
+                f"minimalist {room_type}, extremely clean aesthetic, simple forms, "
+                "essential furniture only, uncluttered zen space, "
+                "materials: smooth white surfaces, natural wood, concrete, glass, "
+                "colors: pure white, black, light gray, single accent color, "
+                "lighting: hidden LED strips, natural light, clean shadows, "
+                "negative space, geometric shapes, calm atmosphere, "
+                "professional photography, high quality, 8k, crisp and clear"
+            ),
+            'traditional': (
+                f"traditional {room_type}, classic elegant furniture, timeless style, "
+                "formal arrangement, sophisticated details, "
+                "materials: dark mahogany wood, leather upholstery, silk fabrics, brass hardware, "
+                "colors: warm neutrals, navy blue, burgundy, gold accents, cream, "
+                "lighting: chandeliers, table lamps, warm ambient light, "
+                "crown molding, elegant drapery, classic decor, "
+                "professional interior photography, 8k, rich colors"
             )
         }
 
@@ -464,6 +594,42 @@ class CompleteTransformationPipeline:
             "cluttered, messy, unrealistic, cartoon, anime, "
             "oversaturated, noise, artifacts"
         )
+
+    def _get_controlnet_scales(self, room_type: str) -> list:
+        """Dynamic ControlNet conditioning scales based on room characteristics"""
+        scales_map = {
+            'living_room': [0.8, 0.6],    # Strong depth, moderate canny
+            'bedroom': [0.7, 0.5],         # Moderate control for intimate spaces
+            'kitchen': [0.8, 0.4],         # Strong depth, light edges (for fixtures)
+            'bathroom': [0.8, 0.7],        # Strong control for both (fixtures + layout)
+            'dining_room': [0.75, 0.55],   # Balanced control
+            'office': [0.7, 0.6],          # Moderate control
+            'default': [0.8, 0.6]          # Default balanced approach
+        }
+
+        # Normalize room_type to lowercase and handle variations
+        room_normalized = room_type.lower().replace(' ', '_')
+
+        return scales_map.get(room_normalized, scales_map['default'])
+
+    def _should_use_multi_controlnet(self, room_type: str, image_complexity: str = 'medium') -> bool:
+        """
+        Determine if multi-ControlNet should be used based on room type and complexity
+
+        Args:
+            room_type: Type of room
+            image_complexity: Estimated complexity ('low', 'medium', 'high')
+
+        Returns:
+            True if multi-ControlNet should be used
+        """
+        # Rooms that benefit from additional ControlNets
+        complex_rooms = ['kitchen', 'bathroom', 'office']
+
+        room_normalized = room_type.lower().replace(' ', '_')
+
+        # Use multi-ControlNet for complex rooms or high complexity images
+        return room_normalized in complex_rooms or image_complexity == 'high'
 
 
 # ============================================================================

@@ -1,6 +1,6 @@
-# Core Dependencies
-torch>=2.6.0
-torchvision>=0.17.0
+# Core Dependencies (aligned with Modal deployment)
+torch==2.5.1
+torchvision==0.20.1
 torchaudio>=2.1.0
 
 # Computer Vision

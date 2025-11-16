@@ -141,15 +141,15 @@ class JobQueue:
             'max_attempts': 3
         }
 
-        # Store in Redis with 1-hour TTL (3600 seconds)
-        self.redis.setex(
+        # Use pipeline for atomic operations
+        pipe = self.redis.pipeline()
+        pipe.setex(
             f"job:{job_id}",
             3600,
             json.dumps(job_data)
         )
-
-        # Add to processing queue (list)
-        self.redis.lpush('job_queue', job_id)
+        pipe.lpush('job_queue', job_id)
+        pipe.execute()
 
         logger.info(f"Created job {job_id} for user {user_id} (style: {style})")
 
@@ -189,6 +189,9 @@ class JobQueue:
         """
         Update job status and notify WebSocket listeners
 
+        Uses optimistic locking (WATCH/MULTI) to prevent race conditions
+        when multiple workers or the frontend update job status concurrently.
+
         Args:
             job_id: Job UUID
             status: New status (from JobStatus constants)
@@ -197,62 +200,93 @@ class JobQueue:
             error: Error message (if failed)
             metadata: Additional metadata to update
         """
-        # Get current job data
-        job_data_str = self.redis.get(f"job:{job_id}")
+        job_key = f"job:{job_id}"
+        max_retries = 3
 
-        if not job_data_str:
-            logger.warning(f"Job {job_id} not found, cannot update status")
-            return
+        for attempt in range(max_retries):
+            try:
+                # Start optimistic locking transaction
+                with self.redis.pipeline() as pipe:
+                    while True:
+                        try:
+                            # WATCH the job key for changes
+                            pipe.watch(job_key)
 
-        job_data = json.loads(job_data_str)
+                            # Get current job data
+                            job_data_str = pipe.get(job_key)
 
-        # Update fields
-        job_data['status'] = status
-        job_data['updated_at'] = datetime.utcnow().isoformat()
+                            if not job_data_str:
+                                logger.warning(f"Job {job_id} not found, cannot update status")
+                                pipe.unwatch()
+                                return
 
-        if progress is not None:
-            job_data['progress'] = progress
+                            job_data = json.loads(job_data_str)
 
-        if result_url:
-            job_data['result_url'] = result_url
+                            # Update fields
+                            job_data['status'] = status
+                            job_data['updated_at'] = datetime.utcnow().isoformat()
 
-        if error:
-            job_data['error'] = error
+                            if progress is not None:
+                                job_data['progress'] = progress
 
-        if metadata:
-            job_data.update(metadata)
+                            if result_url:
+                                job_data['result_url'] = result_url
 
-        # Calculate estimated time remaining
-        if progress and progress > 0:
-            elapsed = (
-                datetime.utcnow() -
-                datetime.fromisoformat(job_data['created_at'])
-            ).total_seconds()
-            estimated_total = elapsed / progress
-            job_data['estimated_time_remaining'] = max(0, estimated_total - elapsed)
+                            if error:
+                                job_data['error'] = error
 
-        # Save updated data
-        self.redis.setex(f"job:{job_id}", 3600, json.dumps(job_data))
+                            if metadata:
+                                job_data.update(metadata)
 
-        # Publish update for WebSocket subscribers
-        update_message = {
-            'job_id': job_id,
-            'status': status,
-            'progress': progress,
-            'result_url': result_url,
-            'error': error,
-            'timestamp': datetime.utcnow().isoformat()
-        }
+                            # Calculate estimated time remaining
+                            if progress and progress > 0:
+                                elapsed = (
+                                    datetime.utcnow() -
+                                    datetime.fromisoformat(job_data['created_at'])
+                                ).total_seconds()
+                                estimated_total = elapsed / progress
+                                job_data['estimated_time_remaining'] = max(0, estimated_total - elapsed)
 
-        self.redis.publish(
-            f"job_updates:{job_id}",
-            json.dumps(update_message)
-        )
+                            # Begin transaction
+                            pipe.multi()
 
-        logger.info(
-            f"Job {job_id} updated: {status} "
-            f"({progress * 100 if progress else 0:.0f}%)"
-        )
+                            # Save updated data atomically
+                            pipe.setex(job_key, 3600, json.dumps(job_data))
+
+                            # Publish update for WebSocket subscribers
+                            update_message = {
+                                'job_id': job_id,
+                                'status': status,
+                                'progress': progress,
+                                'result_url': result_url,
+                                'error': error,
+                                'timestamp': datetime.utcnow().isoformat()
+                            }
+
+                            pipe.publish(
+                                f"job_updates:{job_id}",
+                                json.dumps(update_message)
+                            )
+
+                            # Execute transaction
+                            pipe.execute()
+
+                            logger.info(
+                                f"Job {job_id} updated: {status} "
+                                f"({progress * 100 if progress else 0:.0f}%)"
+                            )
+
+                            return  # Success
+
+                        except redis.WatchError:
+                            # Another client modified the key, retry
+                            logger.debug(f"Concurrent modification detected for job {job_id}, retry {attempt + 1}/{max_retries}")
+                            continue
+
+            except Exception as e:
+                logger.error(f"Error updating job {job_id}: {e}")
+                if attempt == max_retries - 1:
+                    raise
 
     async def get_job_status(self, job_id: str) -> Dict:
         """

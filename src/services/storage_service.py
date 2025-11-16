@@ -98,7 +98,8 @@ class StorageService:
         key: str,
         optimize: bool = True,
         quality: int = 85,
-        make_public: bool = True
+        make_public: bool = True,
+        use_streaming: bool = None
     ) -> str:
         """
         Upload image to S3/R2 with optional optimization
@@ -109,6 +110,7 @@ class StorageService:
             optimize: Whether to optimize image
             quality: JPEG quality (1-100)
             make_public: Whether to make image publicly accessible
+            use_streaming: Whether to use streaming upload (auto-detect if None)
 
         Returns:
             Public CDN URL or S3 URL
@@ -119,13 +121,14 @@ class StorageService:
         if optimize:
             image = self._optimize_image(image, quality)
 
-        # Convert to bytes
-        buffer = io.BytesIO()
-        image_format = 'JPEG' if image.mode == 'RGB' else 'PNG'
-        image.save(buffer, format=image_format, quality=quality, optimize=True)
-        buffer.seek(0)
+        # Auto-detect streaming based on image size
+        if use_streaming is None:
+            # Estimate memory usage: width * height * channels * bytes_per_pixel
+            estimated_size_mb = (image.width * image.height * 3) / (1024 * 1024)
+            use_streaming = estimated_size_mb > 10  # Use streaming for images >10MB
 
-        # Set content type
+        # Convert to bytes or stream
+        image_format = 'JPEG' if image.mode == 'RGB' else 'PNG'
         content_type = f'image/{image_format.lower()}'
 
         # Upload to S3/R2
@@ -138,12 +141,22 @@ class StorageService:
             if make_public:
                 extra_args['ACL'] = 'public-read'
 
-            self.s3_client.upload_fileobj(
-                buffer,
-                self.bucket_name,
-                key,
-                ExtraArgs=extra_args
-            )
+            if use_streaming:
+                # Streaming upload for large images
+                logger.info(f"Using streaming upload for large image ({image.width}x{image.height})")
+                self._upload_image_streaming(image, key, image_format, quality, extra_args)
+            else:
+                # Standard buffered upload
+                buffer = io.BytesIO()
+                image.save(buffer, format=image_format, quality=quality, optimize=True)
+                buffer.seek(0)
+
+                self.s3_client.upload_fileobj(
+                    buffer,
+                    self.bucket_name,
+                    key,
+                    ExtraArgs=extra_args
+                )
 
             # Generate URL
             if make_public and self.cdn_domain:
@@ -281,6 +294,46 @@ class StorageService:
         thumbnail = image.copy()
         thumbnail.thumbnail(size, Image.LANCZOS)
         return thumbnail
+
+    def _upload_image_streaming(
+        self,
+        image: Image.Image,
+        key: str,
+        image_format: str,
+        quality: int,
+        extra_args: dict
+    ):
+        """
+        Upload image using streaming to minimize memory usage
+
+        This method saves the image in chunks directly to S3 without
+        loading the entire file into memory first.
+
+        Args:
+            image: PIL Image object
+            key: S3 object key
+            image_format: Image format (JPEG or PNG)
+            quality: JPEG quality
+            extra_args: S3 upload extra arguments
+        """
+        import tempfile
+
+        # Use a temporary file as intermediate storage
+        # This allows us to stream from disk instead of holding in memory
+        with tempfile.NamedTemporaryFile(suffix=f'.{image_format.lower()}', delete=True) as tmp_file:
+            # Save image to temp file
+            image.save(tmp_file.name, format=image_format, quality=quality, optimize=True)
+
+            # Upload from temp file (streaming)
+            with open(tmp_file.name, 'rb') as file_handle:
+                self.s3_client.upload_fileobj(
+                    file_handle,
+                    self.bucket_name,
+                    key,
+                    ExtraArgs=extra_args
+                )
+
+            logger.info(f"✓ Streamed large image upload to {key}")
 
     def _optimize_image(
         self,

@@ -44,6 +44,25 @@ class YOLOFineTuner:
         self.output_dir = Path("./yolo_training_runs")
         self.output_dir.mkdir(exist_ok=True)
 
+    def _set_seed(self, seed: int):
+        """Set all random seeds for reproducibility"""
+        import random
+        import numpy as np
+
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+        # For YOLO/Ultralytics
+        os.environ['PYTHONHASHSEED'] = str(seed)
+
+        # Deterministic operations (may reduce performance slightly)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+        print(f"✓ Set all random seeds to {seed} for reproducibility")
+
     def train(
         self,
         epochs: int = 100,
@@ -54,7 +73,8 @@ class YOLOFineTuner:
         save_period: int = 10,
         augment: bool = True,
         freeze_layers: int = 0,
-        resume: bool = False
+        resume: bool = False,
+        seed: int = 42
     ):
         """
         Train YOLO model
@@ -69,7 +89,11 @@ class YOLOFineTuner:
             augment: Use data augmentation
             freeze_layers: Number of layers to freeze (0 = train all)
             resume: Resume from last checkpoint
+            seed: Random seed for reproducibility
         """
+
+        # Set seeds for reproducibility
+        self._set_seed(seed)
 
         print("\n" + "=" * 70)
         print(f"🚀 STARTING YOLO FINE-TUNING")
@@ -84,6 +108,7 @@ class YOLOFineTuner:
         print(f"   Device: {self.device}")
         print(f"   Augmentation: {augment}")
         print(f"   Freeze Layers: {freeze_layers}")
+        print(f"   Seed: {seed}")
         print("=" * 70 + "\n")
 
         # Load model
@@ -140,8 +165,26 @@ class YOLOFineTuner:
 
         print(f"\n✅ Training completed at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-        # Save training summary
-        self._save_training_summary(results)
+        # Save training summary with complete configuration
+        training_config = {
+            'seed': seed,
+            'epochs': epochs,
+            'batch_size': batch_size,
+            'image_size': image_size,
+            'learning_rate': learning_rate,
+            'patience': patience,
+            'save_period': save_period,
+            'augment': augment,
+            'freeze_layers': freeze_layers,
+            'optimizer': 'AdamW',
+            'cos_lr': True,
+            'amp': True,
+            'weight_decay': 0.0005,
+            'warmup_epochs': 3.0,
+            'model_size': self.model_size,
+            'num_classes': self.num_classes
+        }
+        self._save_training_summary(results, training_config)
 
         return results
 
@@ -201,8 +244,8 @@ class YOLOFineTuner:
             except Exception as e:
                 print(f"   ❌ {fmt} export failed: {e}")
 
-    def _save_training_summary(self, results):
-        """Save training summary to JSON"""
+    def _save_training_summary(self, results, training_config: dict = None):
+        """Save training summary and complete config to JSON"""
 
         latest_run = self.output_dir / 'finetune_294_classes'
 
@@ -214,12 +257,23 @@ class YOLOFineTuner:
             'data_yaml': str(self.data_yaml),
         }
 
+        # Add training configuration for reproducibility
+        if training_config:
+            summary['training_config'] = training_config
+
         summary_path = latest_run / 'training_summary.json'
 
         with open(summary_path, 'w') as f:
             json.dump(summary, f, indent=2)
 
         print(f"\n✅ Training summary saved: {summary_path}")
+
+        # Also save standalone config for easy reproduction
+        if training_config:
+            config_path = latest_run / 'training_config.json'
+            with open(config_path, 'w') as f:
+                json.dump(training_config, f, indent=2)
+            print(f"✅ Training config saved: {config_path}")
 
     def test_inference(self, image_path: str, weights_path: str = None, conf_threshold: float = 0.25):
         """

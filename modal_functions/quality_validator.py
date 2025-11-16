@@ -14,14 +14,108 @@ logger = logging.getLogger(__name__)
 class QualityValidator:
     """Validates quality of generated interior design images"""
 
-    def __init__(self, min_score: float = 0.75):
+    def __init__(self, min_score: float = 0.75, use_clip_scorer: bool = False):
         """
         Initialize validator
 
         Args:
             min_score: Minimum acceptable quality score (0-1)
+            use_clip_scorer: Whether to use CLIP-based aesthetic scoring (requires model loading)
         """
         self.min_score = min_score
+        self.use_clip_scorer = use_clip_scorer
+        self.clip_model = None
+        self.clip_processor = None
+
+        if use_clip_scorer:
+            self._load_clip_scorer()
+
+    def _load_clip_scorer(self):
+        """Load CLIP model for aesthetic scoring"""
+        try:
+            from transformers import CLIPProcessor, CLIPModel
+            import torch
+
+            logger.info("Loading CLIP model for aesthetic scoring...")
+            self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+            self.clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+
+            # Move to GPU if available
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            self.clip_model = self.clip_model.to(device)
+            self.clip_model.eval()
+
+            logger.info(f"✓ CLIP model loaded on {device}")
+
+        except Exception as e:
+            logger.warning(f"Failed to load CLIP model: {e}. Falling back to heuristics.")
+            self.use_clip_scorer = False
+
+    def _calculate_clip_aesthetic_score(self, image: Image.Image, style: str) -> float:
+        """
+        Calculate aesthetic score using CLIP
+
+        Compares the image against positive/negative aesthetic prompts
+        specific to interior design.
+
+        Args:
+            image: Generated image
+            style: Style name
+
+        Returns:
+            Aesthetic score (0-1)
+        """
+        if not self.use_clip_scorer or self.clip_model is None:
+            return 0.5  # Neutral score if CLIP not available
+
+        try:
+            import torch
+
+            # Aesthetic quality prompts for interior design
+            positive_prompts = [
+                f"professional high-quality {style} interior design photograph",
+                "beautiful, well-lit, harmonious interior space",
+                "aesthetically pleasing room with good composition",
+                "realistic interior design with excellent details"
+            ]
+
+            negative_prompts = [
+                "blurry, low quality interior photograph",
+                "distorted, unrealistic room",
+                "artificial, fake-looking interior",
+                "poorly composed cluttered space"
+            ]
+
+            # Process image and text
+            device = self.clip_model.device
+
+            inputs = self.clip_processor(
+                text=positive_prompts + negative_prompts,
+                images=image,
+                return_tensors="pt",
+                padding=True
+            ).to(device)
+
+            # Get CLIP scores
+            with torch.no_grad():
+                outputs = self.clip_model(**inputs)
+                logits_per_image = outputs.logits_per_image
+                probs = logits_per_image.softmax(dim=1).cpu().numpy()[0]
+
+            # Calculate score as ratio of positive to total
+            num_positive = len(positive_prompts)
+            positive_score = probs[:num_positive].sum()
+            negative_score = probs[num_positive:].sum()
+
+            # Normalize to 0-1 range
+            aesthetic_score = positive_score / (positive_score + negative_score)
+
+            logger.info(f"CLIP aesthetic score: {aesthetic_score:.3f}")
+            return float(aesthetic_score)
+
+        except Exception as e:
+            logger.warning(f"CLIP scoring failed: {e}")
+            return 0.5  # Neutral score on error
 
     def validate_result(
         self,
@@ -66,14 +160,26 @@ class QualityValidator:
         # Check 5: Image sharpness/detail
         checks['sharpness'] = self._check_sharpness(generated_image)
 
-        # Calculate overall score (weighted average)
-        weights = {
-            'not_blank': 0.25,
-            'color_variance': 0.15,
-            'no_artifacts': 0.25,
-            'structural_similarity': 0.25,
-            'sharpness': 0.10
-        }
+        # Check 6: CLIP aesthetic score (if enabled)
+        if self.use_clip_scorer:
+            checks['aesthetic'] = self._calculate_clip_aesthetic_score(generated_image, style)
+            weights = {
+                'not_blank': 0.20,
+                'color_variance': 0.10,
+                'no_artifacts': 0.20,
+                'structural_similarity': 0.20,
+                'sharpness': 0.10,
+                'aesthetic': 0.20  # CLIP aesthetic score
+            }
+        else:
+            # Calculate overall score (weighted average) - without CLIP
+            weights = {
+                'not_blank': 0.25,
+                'color_variance': 0.15,
+                'no_artifacts': 0.25,
+                'structural_similarity': 0.25,
+                'sharpness': 0.10
+            }
 
         overall_score = sum(
             checks[key] * weights[key]

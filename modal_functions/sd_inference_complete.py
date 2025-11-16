@@ -216,8 +216,8 @@ class CompleteTransformationPipeline:
             logger.warning("⚠️ Custom YOLO not found at /models/yolo/v1/best.pt, using generic yolov8n.pt")
             self.yolo = YOLO("yolov8n.pt")  # Fallback to generic
 
-        # 3. Load ControlNet models (generic + interior-specific)
-        logger.info("Loading ControlNet models...")
+        # 3. Load ControlNet models (core models eagerly, advanced models lazily)
+        logger.info("Loading core ControlNet models...")
         self.controlnet_depth = ControlNetModel.from_pretrained(
             "lllyasviel/control_v11f1p_sd15_depth",
             torch_dtype=torch.float16
@@ -226,17 +226,12 @@ class CompleteTransformationPipeline:
             "lllyasviel/control_v11p_sd15_canny",
             torch_dtype=torch.float16
         )
+        logger.info("✓ Loaded core ControlNet models (depth, canny)")
 
-        # Load interior-specific ControlNets
-        self.controlnet_seg_room = ControlNetModel.from_pretrained(
-            "BertChristiaens/controlnet-seg-room",
-            torch_dtype=torch.float16
-        )
-        self.controlnet_mlsd = ControlNetModel.from_pretrained(
-            "lllyasviel/control_v11p_sd15_mlsd",
-            torch_dtype=torch.float16
-        )
-        logger.info("✓ Loaded 4 ControlNet models (depth, canny, seg-room, M-LSD)")
+        # Lazy-load advanced ControlNets only when needed
+        self.controlnet_seg_room = None
+        self.controlnet_mlsd = None
+        logger.info("Advanced ControlNets (seg-room, M-LSD) will be lazy-loaded on demand")
 
         # 4. Load SD 1.5 pipeline
         logger.info("Loading SD 1.5 pipeline...")
@@ -276,6 +271,32 @@ class CompleteTransformationPipeline:
         logger.info("✓ Quality validator ready")
 
         logger.info("✅ All models loaded successfully!")
+
+    def _load_controlnet_seg_room(self):
+        """Lazy-load segmentation ControlNet"""
+        if self.controlnet_seg_room is None:
+            import torch
+            from diffusers import ControlNetModel
+            logger.info("Lazy-loading seg-room ControlNet...")
+            self.controlnet_seg_room = ControlNetModel.from_pretrained(
+                "BertChristiaens/controlnet-seg-room",
+                torch_dtype=torch.float16
+            ).to(self.device)
+            logger.info("✓ Loaded seg-room ControlNet")
+        return self.controlnet_seg_room
+
+    def _load_controlnet_mlsd(self):
+        """Lazy-load M-LSD ControlNet"""
+        if self.controlnet_mlsd is None:
+            import torch
+            from diffusers import ControlNetModel
+            logger.info("Lazy-loading M-LSD ControlNet...")
+            self.controlnet_mlsd = ControlNetModel.from_pretrained(
+                "lllyasviel/control_v11p_sd15_mlsd",
+                torch_dtype=torch.float16
+            ).to(self.device)
+            logger.info("✓ Loaded M-LSD ControlNet")
+        return self.controlnet_mlsd
 
     @modal.method()
     def process_transformation_complete(
@@ -322,6 +343,17 @@ class CompleteTransformationPipeline:
             'cdn_domain': os.getenv('CDN_DOMAIN')
         }
 
+        # Validate R2 config before proceeding
+        required_keys = ['endpoint_url', 'access_key_id', 'secret_access_key', 'bucket_name']
+        missing_keys = [k for k in required_keys if not r2_config.get(k)]
+
+        if missing_keys:
+            error_msg = f"Missing required R2 configuration: {', '.join(missing_keys).upper()}"
+            logger.error(error_msg)
+            if redis_url:
+                update_redis_progress(redis_url, job_id, "failed", 0.0, error_msg)
+            raise ValueError(error_msg)
+
         try:
             # Step 1: Download image from R2
             update_redis_progress(redis_url, job_id, "analyzing", 0.1, "Downloading your image...")
@@ -329,6 +361,11 @@ class CompleteTransformationPipeline:
             image_bytes = download_image_from_r2(image_url, r2_config)
             image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
             logger.info(f"✓ Downloaded image: {image.size}")
+
+            # Calculate target size preserving aspect ratio (nearest multiple of 64)
+            orig_width, orig_height = image.size
+            target_size = self._calculate_target_size(orig_width, orig_height)
+            logger.info(f"Target size for processing: {target_size} (original: {image.size})")
 
             # Step 2: Generate depth map
             update_redis_progress(redis_url, job_id, "generating", 0.3, "Generating depth map...")
@@ -341,23 +378,28 @@ class CompleteTransformationPipeline:
             depth_colored = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_INFERNO)
             depth_colored = cv2.cvtColor(depth_colored, cv2.COLOR_BGR2RGB)
 
-            depth_image = Image.fromarray(depth_colored).resize((512, 512), Image.LANCZOS)
+            depth_image = Image.fromarray(depth_colored).resize(target_size, Image.LANCZOS)
             logger.info("✓ Generated depth map")
 
-            # Step 3: Generate Canny edges
+            # Step 3: Generate Canny edges with adaptive thresholds
             update_redis_progress(redis_url, job_id, "generating", 0.4, "Generating edge map...")
 
             image_np = np.array(image)
             gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
             blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-            edges = cv2.Canny(blurred, 100, 200)
+
+            # Adaptive Canny thresholds based on image contrast
+            low_thresh, high_thresh = self._calculate_adaptive_canny_thresholds(blurred)
+            logger.info(f"Using adaptive Canny thresholds: {low_thresh}, {high_thresh}")
+
+            edges = cv2.Canny(blurred, low_thresh, high_thresh)
 
             # Dilate edges
             kernel = np.ones((2, 2), np.uint8)
             edges = cv2.dilate(edges, kernel, iterations=1)
             edges_rgb = cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
 
-            canny_image = Image.fromarray(edges_rgb).resize((512, 512), Image.LANCZOS)
+            canny_image = Image.fromarray(edges_rgb).resize(target_size, Image.LANCZOS)
             logger.info("✓ Generated edge map")
 
             # Step 4: Generate style-specific prompt
@@ -375,7 +417,11 @@ class CompleteTransformationPipeline:
             conditioning_scales = self._get_controlnet_scales(room_type or "living_room")
             logger.info(f"Using conditioning scales {conditioning_scales} for {room_type}")
 
-            generator = torch.Generator(device=self.device).manual_seed(42)
+            # Generate deterministic seed from job_id for reproducibility with variety
+            seed = self._generate_seed_from_job_id(job_id)
+            logger.info(f"Using seed {seed} derived from job_id")
+
+            generator = torch.Generator(device=self.device).manual_seed(seed)
 
             output = self.sd_pipe(
                 prompt=prompt,
@@ -419,7 +465,7 @@ class CompleteTransformationPipeline:
                     'guidance_scale': 7.5,
                     'controlnet_conditioning_scale': conditioning_scales,
                     'generator': generator,
-                    'seed': 42
+                    'seed': seed
                 }
 
                 new_params = self.quality_validator.suggest_retry_params(
@@ -428,7 +474,7 @@ class CompleteTransformationPipeline:
                 )
 
                 # Update generator with new seed if changed
-                if 'seed' in new_params and new_params['seed'] != 42:
+                if 'seed' in new_params and new_params['seed'] != seed:
                     new_params['generator'] = torch.Generator(device=self.device).manual_seed(new_params['seed'])
                     del new_params['seed']
 
@@ -485,8 +531,10 @@ class CompleteTransformationPipeline:
                 "metadata": {
                     "style": style,
                     "processing_time": processing_time,
-                    "quality_score": 0.92,  # Mock score
-                    "room_type": room_type
+                    "quality_score": validation_result['score'],  # Actual validation score
+                    "quality_checks": validation_result['checks'],
+                    "room_type": room_type,
+                    "retry_count": retry_count
                 }
             }
 
@@ -526,6 +574,102 @@ class CompleteTransformationPipeline:
                 )
 
             raise
+
+    def _generate_seed_from_job_id(self, job_id: str) -> int:
+        """
+        Generate deterministic seed from job_id
+
+        This ensures:
+        - Each job gets a unique seed (variety)
+        - Same job_id always produces same seed (reproducibility for retries)
+
+        Args:
+            job_id: Job UUID string
+
+        Returns:
+            Integer seed (0 to 2^32-1)
+        """
+        import hashlib
+
+        # Hash the job_id to get deterministic integer
+        hash_object = hashlib.md5(job_id.encode())
+        hash_hex = hash_object.hexdigest()
+
+        # Convert first 8 hex chars to integer
+        seed = int(hash_hex[:8], 16) % (2**32)
+
+        return seed
+
+    def _calculate_adaptive_canny_thresholds(self, gray_image: "np.ndarray") -> tuple:
+        """
+        Calculate adaptive Canny thresholds based on image contrast
+
+        Uses Otsu's method to determine optimal threshold, then derives
+        Canny low/high thresholds from it.
+
+        Args:
+            gray_image: Grayscale image array
+
+        Returns:
+            Tuple of (low_threshold, high_threshold)
+        """
+        import cv2
+
+        # Calculate median intensity
+        median_intensity = np.median(gray_image)
+
+        # Use percentile-based approach for better adaptation
+        # Calculate gradient magnitude to assess image contrast
+        gradient_x = cv2.Sobel(gray_image, cv2.CV_64F, 1, 0, ksize=3)
+        gradient_y = cv2.Sobel(gray_image, cv2.CV_64F, 0, 1, ksize=3)
+        gradient_magnitude = np.sqrt(gradient_x**2 + gradient_y**2)
+
+        # Use gradient percentiles to set thresholds
+        low_percentile = np.percentile(gradient_magnitude, 50)
+        high_percentile = np.percentile(gradient_magnitude, 85)
+
+        # Scale thresholds (typical ratio is 1:2 or 1:3)
+        low_thresh = max(50, int(low_percentile * 0.66))
+        high_thresh = max(100, int(high_percentile * 1.33))
+
+        # Ensure valid range
+        low_thresh = min(low_thresh, 150)
+        high_thresh = min(high_thresh, 300)
+        high_thresh = max(high_thresh, low_thresh * 2)
+
+        return (low_thresh, high_thresh)
+
+    def _calculate_target_size(self, width: int, height: int, max_dim: int = 768) -> tuple:
+        """
+        Calculate target size preserving aspect ratio as nearest multiple of 64
+
+        Args:
+            width: Original width
+            height: Original height
+            max_dim: Maximum dimension (default: 768)
+
+        Returns:
+            Tuple of (target_width, target_height)
+        """
+        aspect_ratio = width / height
+
+        # Calculate dimensions preserving aspect ratio
+        if width > height:
+            new_width = min(width, max_dim)
+            new_height = int(new_width / aspect_ratio)
+        else:
+            new_height = min(height, max_dim)
+            new_width = int(new_height * aspect_ratio)
+
+        # Round to nearest multiple of 64 for SD compatibility
+        new_width = ((new_width + 31) // 64) * 64
+        new_height = ((new_height + 31) // 64) * 64
+
+        # Ensure minimum size
+        new_width = max(new_width, 512)
+        new_height = max(new_height, 512)
+
+        return (new_width, new_height)
 
     def _get_style_prompt(self, style: str, room_type: str) -> str:
         """Generate enhanced style-specific prompt with materials, colors, and details"""

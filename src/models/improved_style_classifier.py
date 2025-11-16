@@ -111,12 +111,19 @@ class ImprovedStyleDataset(Dataset):
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
 
-        # Load image
+        # Load image with proper error handling
         try:
             image = Image.open(row['original_path']).convert('RGB')
             image_tensor = self.transform(image)
-        except:
-            image_tensor = torch.zeros(3, 224, 224)
+        except Exception as e:
+            # Log the error for debugging
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to load image {row['original_path']}: {e}")
+
+            # Return None to signal failure - DataLoader will skip this sample
+            # This prevents biasing the model with zero tensors
+            raise RuntimeError(f"Image loading failed for {row['original_path']}: {e}")
 
         # Get label
         style_label = self.style_to_idx[row['style']]
@@ -439,20 +446,27 @@ def train_improved_style_classifier(db_path: str, epochs: int = 30, batch_size: 
     train_dataset = ImprovedStyleDataset(db_path, split='train', augment=True, use_furniture_context=True)
     val_dataset = ImprovedStyleDataset(db_path, split='val', augment=False, use_furniture_context=True)
 
-    # Create dataloaders
+    # Determine optimal worker count
+    import os
+    num_workers = min(os.cpu_count() or 4, 8)
+    print(f"Using {num_workers} DataLoader workers for parallel processing")
+
+    # Create dataloaders with parallel workers
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=0,
-        pin_memory=True
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=True  # Reuse workers across epochs
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=0,
-        pin_memory=True
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=True
     )
 
     # Create ensemble

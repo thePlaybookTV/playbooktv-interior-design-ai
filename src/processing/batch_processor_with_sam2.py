@@ -87,10 +87,13 @@ class BatchProcessorWithSAM2:
         self.conn.commit()
 
     def _generate_image_id(self, image_path: str) -> str:
-        """Generate unique ID for image"""
+        """Generate unique ID for image using streaming hash"""
+        hash_md5 = hashlib.md5()
         with open(image_path, 'rb') as f:
-            file_hash = hashlib.md5(f.read()).hexdigest()
-        return file_hash[:16]
+            # Stream in 8KB chunks to minimize memory usage
+            for chunk in iter(lambda: f.read(8192), b""):
+                hash_md5.update(chunk)
+        return hash_md5.hexdigest()[:16]
 
     def _generate_detection_id(self, image_id: str, idx: int) -> str:
         """Generate unique ID for detection"""
@@ -129,17 +132,11 @@ class BatchProcessorWithSAM2:
                     furniture_items = detection_results.get('items', [])
                     furniture_count = len(furniture_items)
 
-                    # Store each detection
+                    # Prepare batch data for all detections
+                    detection_batch = []
                     for idx, item in enumerate(furniture_items):
                         detection_id = self._generate_detection_id(image_id, idx)
-
-                        self.conn.execute("""
-                            INSERT INTO furniture_detections (
-                                detection_id, image_id, item_type, confidence,
-                                bbox_x1, bbox_y1, bbox_x2, bbox_y2,
-                                area_percentage, mask_area, mask_score, has_mask
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, [
+                        detection_batch.append([
                             detection_id,
                             image_id,
                             item['type'],
@@ -150,6 +147,16 @@ class BatchProcessorWithSAM2:
                             item['mask_score'],
                             item['has_mask']
                         ])
+
+                    # Batch insert all detections in single transaction
+                    if detection_batch:
+                        self.conn.executemany("""
+                            INSERT INTO furniture_detections (
+                                detection_id, image_id, item_type, confidence,
+                                bbox_x1, bbox_y1, bbox_x2, bbox_y2,
+                                area_percentage, mask_area, mask_score, has_mask
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, detection_batch)
 
                 except Exception as e:
                     print(f"⚠️  Detection failed for {image_path}: {e}")

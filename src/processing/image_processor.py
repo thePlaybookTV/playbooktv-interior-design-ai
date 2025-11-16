@@ -4,11 +4,11 @@
 import os
 import json
 from pathlib import Path
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Optional, Dict, List
 from datetime import datetime
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 import torch
 from torchvision import transforms
 from sklearn.cluster import KMeans
@@ -79,8 +79,8 @@ class ImageMetadata:
     color_palette: Optional[List[str]] = None
     embedding_path: Optional[str] = None
     file_size: Optional[int] = None
-    timestamp: str = datetime.now().isoformat()
-    
+    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+
     def to_dict(self):
         return asdict(self)
 
@@ -181,8 +181,15 @@ class ImageProcessor:
             }
             
             metadata.file_size = os.path.getsize(image_path)
-            
-            processed_img = image.resize(self.config.target_size, Image.Resampling.LANCZOS)
+
+            # Preserve aspect ratio by padding to square
+            # This prevents distortion and maintains perspective cues for CLIP
+            processed_img = ImageOps.pad(
+                image,
+                self.config.target_size,
+                Image.Resampling.LANCZOS,
+                color=(0, 0, 0)  # Black padding
+            )
             processed_path = self.config.processed_images_dir / f"processed_{metadata.image_id}.jpg"
             processed_img.save(processed_path, "JPEG", quality=self.config.quality)
             metadata.processed_path = str(processed_path)

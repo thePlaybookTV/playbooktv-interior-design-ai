@@ -74,7 +74,7 @@ if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
         else
             TORCH_INDEX="https://download.pytorch.org/whl/cpu"
             echo -e "${YELLOW}Unknown CUDA version (${CUDA_VERSION:-unavailable}) - falling back to CPU wheels${NC}"
-        }
+        fi
 
         pip install -q --index-url "$TORCH_INDEX" $TORCH_PACKAGES
 

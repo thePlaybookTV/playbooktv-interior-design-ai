@@ -7,7 +7,7 @@ This document outlines the comprehensive improvements made to the Modal deployme
 ---
 
 ## ✅ Improvements Implemented (Phase 1 & 2)
-
+///
 ### 1. Interior-Specific ControlNet Models
 
 **Added 2 specialized ControlNet models:**
